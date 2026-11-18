@@ -4,6 +4,8 @@
 #include "Raven/Renderer/RenderCommand.h"
 #include "Raven/Renderer/Texture/Texture.h"
 #include "Raven/Renderer/RHI/RHITypes.h"
+#include "Raven/Renderer/RHI/RHIShaderBinaryLoader.h"
+#include "Raven/Scene/SceneManager.h"
 #include "Raven/Platform/OpenGL/RHI/OpenGLRHITexture.h"
 #include "Raven/UI/Text/UIFontAtlasBuilder.h"
 #include "Raven/UI/Core/UIContext.h"
@@ -946,6 +948,366 @@ bool ReadDX12UI(const Raven::UIDrawList& list, const Raven::math::Vec2& logical,
     return true;
 }
 
+Raven::Ref<Raven::RHIGraphicsPipeline> CreateComputeSmokeGraphics(Raven::RHIDevice& device)
+{
+    using namespace Raven;
+    const bool dx12 = device.GetBackend() == RHIBackend::DirectX12;
+    RHIGraphicsPipelineTarget target{};
+    RHIGraphicsPipelineSpecification spec{};
+    if (device.GetGraphicsPipelineTarget(target) == false ||
+        RHIShaderBinaryLoader::LoadForBackend(dx12 ? "../Tests/x64/ComputeShaders/Smoke.vs.dxil"
+            : "../Tests/x64/ComputeShaders/Smoke.vert.spv", device.GetBackend(), spec.VertexShader,
+            dx12 ? "VSMain" : "main") == false ||
+        RHIShaderBinaryLoader::LoadForBackend(dx12 ? "../Tests/x64/ComputeShaders/Smoke.ps.dxil"
+            : "../Tests/x64/ComputeShaders/Smoke.frag.spv", device.GetBackend(), spec.FragmentShader,
+            dx12 ? "PSMain" : "main") == false)
+    {
+        return nullptr;
+    }
+    spec.ColorFormat = target.ColorFormat;
+    spec.DepthFormat = target.DepthFormat;
+    spec.SampleCount = target.SampleCount;
+    spec.Cull = CullMode::None;
+    if (dx12)
+    {
+        // DX12 Scene PSOはBinding 0の宣言を要求します。入力属性はSV_VertexIDだけです。
+        spec.VertexBindings = {{0, sizeof(float)}};
+    }
+    return device.CreateGraphicsPipeline(spec);
+}
+
+bool CheckVolumePixels(const std::uint8_t* pixels, std::size_t redChannel)
+{
+    for (int i = 0; i < 8; ++i)
+    {
+        if (std::abs(static_cast<int>(pixels[4 * i + redChannel]) - i * 255 / 8) > 1 ||
+            pixels[4 * i + 3] != 255)
+        {
+            std::cerr << "[FAIL] volume texel " << i << " red=" << int(pixels[4 * i + redChannel]) << '\n';
+            return false;
+        }
+    }
+    return true;
+}
+
+class ComputeSmokeScene final : public Raven::Scene
+{
+public:
+    Raven::Ref<Raven::RHIComputeResource> Volume;
+};
+
+using ComputeSmokeDraw = std::function<bool(const Raven::Ref<Raven::RHIComputeResource>&,
+    const std::function<bool()>&)>;
+
+bool RunExplicitComputeSmoke(Raven::RHIDevice& device, const ComputeSmokeDraw& draw)
+{
+    using namespace Raven;
+    const bool dx12 = device.GetBackend() == RHIBackend::DirectX12;
+    RHIShaderBinary binary;
+    if (Check(RHIShaderBinaryLoader::LoadForBackend(dx12 ? "../Tests/x64/ComputeShaders/Smoke.cs.dxil"
+        : "../Tests/x64/ComputeShaders/Smoke.comp.spv", device.GetBackend(), binary,
+        dx12 ? "CSMain" : "main"), "Compute shader artifact") == false)
+    {
+        return false;
+    }
+    auto encoder = device.CreateComputeCommandEncoder();
+    if (Check(encoder != nullptr, "Compute-capable Graphics Queue") == false)
+    {
+        return false;
+    }
+    RHIComputePipelineSpecification spec;
+    spec.LocalSize = {8, 1, 1};
+    spec.Layout = {{0, RHIComputeBindingType::StorageBuffer, RHIComputeAccess::ReadWrite},
+        {1, RHIComputeBindingType::StorageImage3D, RHIComputeAccess::Write}};
+    if (dx12)
+    {
+        spec.DirectX12Bytecode.resize(binary.Code.size());
+        std::memcpy(spec.DirectX12Bytecode.data(), binary.Code.data(), binary.Code.size());
+    }
+    else
+    {
+        spec.VulkanSpirv.resize(binary.Code.size() / sizeof(uint32_t));
+        std::memcpy(spec.VulkanSpirv.data(), binary.Code.data(), binary.Code.size());
+    }
+    std::array<uint32_t, 19> expected{};
+    for (uint32_t i = 0; i < expected.size(); ++i)
+    {
+        expected[i] = i;
+    }
+    const auto pipeline = encoder->CreatePipeline(spec);
+    const auto buffer = encoder->CreateStorageBuffer(sizeof(expected), expected.data());
+    const auto volume = encoder->CreateStorageImage3D({2, 2, 2});
+    const auto secondVolume = encoder->CreateStorageImage3D({2, 2, 2});
+    if (Check(pipeline != nullptr && buffer != nullptr && volume != nullptr &&
+        secondVolume != nullptr, "Compute resources") == false)
+    {
+        return false;
+    }
+    SceneManager scenes;
+    auto first = CreateScope<ComputeSmokeScene>();
+    first->Volume = volume;
+    scenes.SetScene(std::move(first));
+    const auto switchScene = [&]()
+    {
+        // Present直後に旧Sceneの所有参照を破棄しても、Compute FrameがGPU参照を保持します。
+        const auto previous = scenes.GetActiveSceneID();
+        scenes.RequestSceneChange(CreateScope<ComputeSmokeScene>());
+        return scenes.FlushPendingSceneChange() && scenes.GetActiveSceneID() != previous;
+    };
+    auto ticket = CreateRef<Ref<RHIComputeReadback>>();
+    const auto record = [pipeline, buffer, volume, secondVolume, ticket](auto& commands)
+    {
+        const RHIComputeBinding bindings[] = {{0, buffer}, {1, volume}};
+        // 最初のDispatchで書いたImageを後で描画するため、Barrierが直前のBindingだけに
+        // 限定されていると、このテストのGraphics Samplingが失敗します。
+        const RHIComputeBinding nextBindings[] = {{0, buffer}, {1, secondVolume}};
+        if (commands.Dispatch(pipeline, bindings, {0, 1, 1}) ||
+            commands.Dispatch(pipeline, bindings, {3, 1, 1}) == false ||
+            commands.Barrier(RHIComputeConsumer::Storage) == false ||
+            commands.Dispatch(pipeline, nextBindings, {3, 1, 1}) == false ||
+            commands.Barrier(RHIComputeConsumer::TextureSampling) == false ||
+            commands.Barrier(RHIComputeConsumer::BufferReadback) == false)
+        {
+            return false;
+        }
+        *ticket = commands.RequestBufferReadback(buffer, 0, 19 * sizeof(uint32_t));
+        std::vector<std::byte> pending;
+        return *ticket != nullptr && (*ticket)->Poll(pending) == RHIComputeReadbackStatus::Pending && pending.empty();
+    };
+    for (int frame = 0; frame < 2; ++frame)
+    {
+        if (encoder->QueueFrame(record) == false || draw(volume, switchScene) == false)
+        {
+            return Check(false, "Compute and Graphics frame");
+        }
+        std::vector<std::byte> bytes;
+        if (Check(*ticket != nullptr && (*ticket)->Poll(bytes) == RHIComputeReadbackStatus::Ready &&
+            bytes.size() == sizeof(expected), "Frame-complete Buffer Readback") == false)
+        {
+            return false;
+        }
+        for (uint32_t& value : expected)
+        {
+            value = (value * 3u + 7u) * 3u + 7u;
+        }
+        if (Check(std::memcmp(bytes.data(), expected.data(), sizeof(expected)) == 0,
+            "CPU reference array equality") == false)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool TestVulkanComputeSmoke()
+{
+    using namespace Raven;
+    auto window = Window::Create(WindowSpecification("Vulkan Compute", 64, 64, RHIBackend::Vulkan));
+    VulkanSceneContext context;
+    if (window == nullptr || context.Init(*window) == false)
+    {
+        return Check(false, "Vulkan Compute Context");
+    }
+    VulkanSceneRHIDevice device(context);
+    return RunExplicitComputeSmoke(device, [&](const Ref<RHIComputeResource>& volume, const auto& switchScene)
+    {
+        const auto pipeline = std::dynamic_pointer_cast<VulkanGraphicsPipeline>(CreateComputeSmokeGraphics(device));
+        const auto native = context.GetDevice().GetHandle();
+        const auto extent = context.GetExtent();
+        const auto view = GetVulkanComputeTexture(volume, native);
+        VulkanColorReadback pixels(context.GetDevice());
+        if (pipeline == nullptr || view == VK_NULL_HANDLE ||
+            pixels.Init(context.GetDevice().GetPhysicalDeviceHandle(), VkDeviceSize(extent.width) * extent.height * 4) == false)
+        {
+            return false;
+        }
+        VkSampler sampler = VK_NULL_HANDLE;
+        VkDescriptorPool pool = VK_NULL_HANDLE;
+        VkSamplerCreateInfo samplerInfo{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+        samplerInfo.magFilter = VK_FILTER_NEAREST;
+        samplerInfo.minFilter = VK_FILTER_NEAREST;
+        samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        VkDescriptorPoolSize count{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+        VkDescriptorPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+        poolInfo.maxSets = 1;
+        poolInfo.poolSizeCount = 1;
+        poolInfo.pPoolSizes = &count;
+        const bool result = [&]()
+        {
+            if (vkCreateSampler(native, &samplerInfo, nullptr, &sampler) != VK_SUCCESS ||
+                vkCreateDescriptorPool(native, &poolInfo, nullptr, &pool) != VK_SUCCESS)
+            {
+                return false;
+            }
+            const auto layout = pipeline->GetTextureSetLayout();
+            VkDescriptorSetAllocateInfo allocate{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+            allocate.descriptorPool = pool;
+            allocate.descriptorSetCount = 1;
+            allocate.pSetLayouts = &layout;
+            VkDescriptorSet set = VK_NULL_HANDLE;
+            if (vkAllocateDescriptorSets(native, &allocate, &set) != VK_SUCCESS)
+            {
+                return false;
+            }
+            VkDescriptorImageInfo image{sampler, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            write.dstSet = set;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            write.pImageInfo = &image;
+            vkUpdateDescriptorSets(native, 1, &write, 0, nullptr);
+            if (context.BeginFrame() != RHIFrameResult::Success || context.BindGraphicsPipeline(pipeline) == false)
+            {
+                return false;
+            }
+            const auto commands = context.GetActiveCommandBuffer();
+            vkCmdBindDescriptorSets(commands, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->GetLayout(), 0, 1, &set, 0, nullptr);
+            vkCmdDraw(commands, 3, 1, 0, 0);
+            if (context.CopyColorToBuffer(pixels.Buffer, pixels.Size) == false ||
+                context.EndFrame() != RHIFrameResult::Success || context.Present() == RHIFrameResult::FatalError ||
+                switchScene() == false ||
+                context.GetDevice().WaitIdle() == false)
+            {
+                return false;
+            }
+            void* mapped = nullptr;
+            if (vkMapMemory(native, pixels.Memory, 0, pixels.Size, 0, &mapped) != VK_SUCCESS)
+            {
+                return false;
+            }
+            const auto format = context.GetColorFormat();
+            const bool passed = CheckVolumePixels(static_cast<std::uint8_t*>(mapped),
+                format == VK_FORMAT_B8G8R8A8_UNORM ? 2 : 0);
+            vkUnmapMemory(native, pixels.Memory);
+            return passed;
+        }();
+        context.GetDevice().WaitIdle();
+        vkDestroyDescriptorPool(native, pool, nullptr);
+        vkDestroySampler(native, sampler, nullptr);
+        return result && context.Resize(400, 300) && context.BeginFrame() == RHIFrameResult::Success &&
+            context.EndFrame() == RHIFrameResult::Success && context.Present() != RHIFrameResult::FatalError;
+    });
+}
+
+bool TestDX12ComputeSmoke()
+{
+    using namespace Raven;
+    auto window = Window::Create(WindowSpecification("DX12 Compute", 64, 64, RHIBackend::DirectX12));
+    DX12SceneContext context;
+    if (window == nullptr || context.Init(*window) == false)
+    {
+        return Check(false, "DX12 Compute Context");
+    }
+    DX12SceneRHIDevice device(context);
+    return RunExplicitComputeSmoke(device, [&](const Ref<RHIComputeResource>& volume, const auto& switchScene)
+    {
+        using Microsoft::WRL::ComPtr;
+        const auto pipeline = std::dynamic_pointer_cast<DX12SceneGraphicsPipeline>(CreateComputeSmokeGraphics(device));
+        RHIOffscreenRenderTargetSpecification targetSpec{};
+        targetSpec.Width = 64;
+        targetSpec.Height = 64;
+        const auto target = std::dynamic_pointer_cast<DX12OffscreenRenderTarget>(device.CreateOffscreenRenderTarget(targetSpec));
+        auto* native = context.GetNativeDevice();
+        auto* texture = GetDX12ComputeTexture(volume, native);
+        if (pipeline == nullptr || target == nullptr || texture == nullptr)
+        {
+            return false;
+        }
+        ComPtr<ID3D12DescriptorHeap> table;
+        D3D12_DESCRIPTOR_HEAP_DESC tableInfo{};
+        tableInfo.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        tableInfo.NumDescriptors = 1;
+        tableInfo.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        if (FAILED(native->CreateDescriptorHeap(&tableInfo, IID_PPV_ARGS(&table))))
+        {
+            return false;
+        }
+        D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
+        srv.Format = DXGI_FORMAT_R32_FLOAT;
+        srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE3D;
+        srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srv.Texture3D.MipLevels = 1;
+        native->CreateShaderResourceView(texture, &srv, table->GetCPUDescriptorHandleForHeapStart());
+        const auto color = target->GetColorResource()->GetDesc();
+        D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};
+        UINT64 size = 0;
+        native->GetCopyableFootprints(&color, 0, 1, 0, &footprint, nullptr, nullptr, &size);
+        D3D12_HEAP_PROPERTIES heap{};
+        heap.Type = D3D12_HEAP_TYPE_READBACK;
+        D3D12_RESOURCE_DESC buffer{};
+        buffer.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        buffer.Width = size;
+        buffer.Height = 1;
+        buffer.DepthOrArraySize = 1;
+        buffer.MipLevels = 1;
+        buffer.SampleDesc.Count = 1;
+        buffer.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        ComPtr<ID3D12Resource> pixels;
+        if (FAILED(native->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &buffer,
+            D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&pixels))))
+        {
+            return false;
+        }
+        const bool result = [&]()
+        {
+            if (context.BeginFrame() != RHIFrameResult::Success ||
+                context.BeginOffscreenRenderTarget(target, targetSpec.ClearColor.data()) == false ||
+                context.BindGraphicsPipeline(pipeline->GetNativePipeline(), pipeline->GetNativeRootSignature()) == false)
+            {
+                return false;
+            }
+            auto* commands = context.GetActiveCommandList();
+            ID3D12DescriptorHeap* tables[] = {table.Get()};
+            commands->SetDescriptorHeaps(1, tables);
+            commands->SetGraphicsRootDescriptorTable(2, table->GetGPUDescriptorHandleForHeapStart());
+            commands->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            commands->DrawInstanced(3, 1, 0, 0);
+            if (context.EndOffscreenRenderTarget(target) == false)
+            {
+                return false;
+            }
+            D3D12_RESOURCE_BARRIER barrier{};
+            barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            barrier.Transition = {target->GetColorResource(), D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_SOURCE};
+            commands->ResourceBarrier(1, &barrier);
+            D3D12_TEXTURE_COPY_LOCATION source{}, destination{};
+            source.pResource = target->GetColorResource();
+            source.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+            destination.pResource = pixels.Get();
+            destination.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+            destination.PlacedFootprint = footprint;
+            commands->CopyTextureRegion(&destination, 0, 0, 0, &source, nullptr);
+            std::swap(barrier.Transition.StateBefore, barrier.Transition.StateAfter);
+            commands->ResourceBarrier(1, &barrier);
+            if (context.EndFrame() != RHIFrameResult::Success || context.Present() == RHIFrameResult::FatalError ||
+                switchScene() == false || context.Resize(400, 300) == false)
+            {
+                return false;
+            }
+            void* mapped = nullptr;
+            const D3D12_RANGE read{0, static_cast<SIZE_T>(size)};
+            if (FAILED(pixels->Map(0, &read, &mapped)))
+            {
+                return false;
+            }
+            const bool passed = CheckVolumePixels(static_cast<std::uint8_t*>(mapped) + footprint.Offset, 0);
+            const D3D12_RANGE written{0, 0};
+            pixels->Unmap(0, &written);
+            return passed;
+        }();
+        if (result == false)
+        {
+            context.Shutdown();
+        }
+        return result && context.BeginFrame() == RHIFrameResult::Success &&
+            context.EndFrame() == RHIFrameResult::Success && context.Present() != RHIFrameResult::FatalError;
+    });
+}
+
 bool TestUIGeometryParity()
 {
     if (glfwInit() == GLFW_FALSE) { return false; }
@@ -1035,6 +1397,14 @@ bool RunOpenGLComputeGPUIntegrationTests();
 
 int main(int argc, char** argv)
 {
+    if (argc == 2 && std::string(argv[1]) == "--vulkan-compute")
+    {
+        return TestVulkanComputeSmoke() ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
+    if (argc == 2 && std::string(argv[1]) == "--dx12-compute")
+    {
+        return TestDX12ComputeSmoke() ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
     if (argc == 2 && std::string(argv[1]) == "--opengl-compute")
     {
         return RunOpenGLComputeGPUIntegrationTests() ? EXIT_SUCCESS : EXIT_FAILURE;

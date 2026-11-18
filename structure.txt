@@ -862,6 +862,7 @@ D:.
     |   |   |   |       DX12SceneBuffer.cpp
     |   |   |   |       DX12SceneBuffer.h
     |   |   |   |       DX12SceneCommandList.h
+    |   |   |   |       DX12Compute.cpp
     |   |   |   |       DX12SceneContext.cpp
     |   |   |   |       DX12SceneContext.h
     |   |   |   |       DX12SceneGraphicsPipeline.h
@@ -932,6 +933,7 @@ D:.
     |   |   |   |       VulkanSceneBuffer.h
     |   |   |   |       VulkanSceneCommandList.cpp
     |   |   |   |       VulkanSceneCommandList.h
+    |   |   |   |       VulkanCompute.cpp
     |   |   |   |       VulkanSceneContext.cpp
     |   |   |   |       VulkanSceneContext.h
     |   |   |   |       VulkanSceneRenderTarget.cpp
@@ -1021,6 +1023,8 @@ D:.
     |   |   |   |       RHICommandList.h
     |   |   |   |       RHICompute.h
     |   |   |   |       RHIDevice.h
+    |   |   |   |       RHIExplicitComputeFrame.cpp
+    |   |   |   |       RHIExplicitComputeFrame.h
     |   |   |   |       RHIExplicitSceneRuntimeFactory.cpp
     |   |   |   |       RHIExplicitSceneRuntimeFactory.h
     |   |   |   |       RHIExplicitSceneSpecification.h

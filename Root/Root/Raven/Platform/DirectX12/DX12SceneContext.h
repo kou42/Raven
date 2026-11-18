@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
+#include "Raven/Renderer/RHI/RHICompute.h"
 #include "Raven/Renderer/RHI/RHIOffscreenRenderTarget.h"
 
 #include "DX12Adapter.h"
@@ -30,6 +31,8 @@ public:
     // sharedContextのDevice/Queueを共有し、SwapChainとFenceはWindowごとに所有します。
     bool Init(Window& window, DX12SceneContext* sharedContext = nullptr);
     RHIFrameResult BeginFrame() override;
+    bool QueueComputeWork(const Ref<RHIComputeFrameWork>& work);
+    ID3D12GraphicsCommandList* GetComputeCommandList() const;
     RHIFrameResult EndFrame() override;
     RHIFrameResult Present() override;
     bool Resize(uint32_t width, uint32_t height) override;
@@ -99,6 +102,8 @@ private:
         std::vector<Ref<RHITexture>> RetainedTextures;
         std::vector<Ref<RHIOffscreenRenderTarget>> RetainedRenderTargets;
         std::vector<PendingEntityPickingReadback> PendingPickingReadbacks;
+        Ref<RHIComputeFrameWork> ComputeWork;
+        bool ComputeSubmitted = false;
     };
 
     // 最後のWindow ContextのFence待機/Frame解放後にDeviceを破棄します。
@@ -113,6 +118,8 @@ private:
     std::shared_ptr<SharedDeviceState> m_Shared;
     DX12SwapChain m_SwapChain;
     DX12Fence m_Fence;
+    Ref<RHIComputeFrameWork> m_PendingComputeWork;
+    bool m_RecordingCompute = false;
     DX12FrameRenderer m_FrameRenderer;
     std::vector<FrameResource> m_Frames;
     uint32_t m_CurrentFrame = 0;

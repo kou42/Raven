@@ -1252,4 +1252,14 @@
     <ClInclude Update="Raven\Renderer\RHI\RHICompute.h"><Filter>Raven\Renderer\RHI</Filter></ClInclude>
     <ClCompile Include="..\Tests\OpenGLComputeGPUIntegrationTests.cpp"><Filter>Tests</Filter></ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Update="Raven\Platform\DirectX12\DX12Compute.cpp"><Filter>Raven\Platform\DirectX12</Filter></ClCompile>
+    <ClCompile Update="Raven\Platform\Vulkan\VulkanCompute.cpp"><Filter>Raven\Platform\Vulkan</Filter></ClCompile>
+    <ClInclude Update="Raven\Renderer\RHI\RHIExplicitComputeFrame.h"><Filter>Raven\Renderer\RHI</Filter></ClInclude>
+    <ClCompile Update="Raven\Renderer\RHI\RHIExplicitComputeFrame.cpp"><Filter>Raven\Renderer\RHI</Filter></ClCompile>
+    <None Include="..\Tests\ComputeShaders\Smoke.hlsl"><Filter>Tests</Filter></None>
+    <None Include="..\Tests\ComputeShaders\Smoke.comp"><Filter>Tests</Filter></None>
+    <None Include="..\Tests\ComputeShaders\Smoke.vert"><Filter>Tests</Filter></None>
+    <None Include="..\Tests\ComputeShaders\Smoke.frag"><Filter>Tests</Filter></None>
+  </ItemGroup>
 </Project>

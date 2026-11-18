@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Renderer/RHI/RHIBuffer.h"
+#include "Raven/Renderer/RHI/RHICompute.h"
 #include "Raven/Renderer/RHI/RHITexture.h"
 #include "Raven/Renderer/RHI/RHIOffscreenRenderTarget.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
@@ -38,6 +39,9 @@ public:
     bool Init(Window& window, VulkanSceneContext* sharedContext = nullptr,
         VkFormat preferredSurfaceFormat = VK_FORMAT_UNDEFINED);
     RHIFrameResult BeginFrame() override;
+    bool QueueComputeWork(const Ref<RHIComputeFrameWork>& work);
+    VkCommandBuffer GetComputeCommandBuffer() const;
+    const Ref<VulkanInstance>& GetComputeDeviceOwner() const { return m_Instance; }
     RHIFrameResult EndFrame() override;
     RHIFrameResult Present() override;
     bool Resize(uint32_t width, uint32_t height) override;
@@ -110,6 +114,7 @@ public:
     VkExtent2D GetExtent() const { return m_SwapChain.GetExtent(); }
 
 private:
+    void CompleteComputeWork(bool gpuCompleted);
     VkExtent2D GetActiveRenderExtent() const;
     // 最後のSurfaceとGPU資源の解放までInstance/Deviceを共有所有します。
     Ref<VulkanInstance> m_Instance;
@@ -131,6 +136,9 @@ private:
     std::vector<RecordedBufferSet> m_RecordedBuffers;
     // Reset前の初期Signal FenceはSubmit済みとして扱わないよう区別します。
     std::vector<bool> m_SubmittedBufferFrames;
+    std::vector<Ref<RHIComputeFrameWork>> m_RecordedComputeWork;
+    Ref<RHIComputeFrameWork> m_PendingComputeWork;
+    bool m_RecordingCompute = false;
     // Framebuffer/DepthをColor Textureと同じFence完了まで保持します。
     std::vector<std::vector<Ref<RHIOffscreenRenderTarget>>>
         m_RecordedOffscreenRenderTargets;

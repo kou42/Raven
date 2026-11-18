@@ -103,6 +103,22 @@ bool DX12SceneContext::Init(Window& window, DX12SceneContext* sharedContext)
     return true;
 }
 
+bool DX12SceneContext::QueueComputeWork(const Ref<RHIComputeFrameWork>& work)
+{
+    if (work == nullptr || m_PendingComputeWork != nullptr || m_FrameActive ||
+        m_FatalError || GetNativeDevice() == nullptr)
+    {
+        return false;
+    }
+    m_PendingComputeWork = work;
+    return true;
+}
+
+ID3D12GraphicsCommandList* DX12SceneContext::GetComputeCommandList() const
+{
+    return m_RecordingCompute ? GetActiveCommandList() : nullptr;
+}
+
 RHIFrameResult DX12SceneContext::BeginFrame()
 {
     if (m_FatalError == true || m_FrameActive == true || m_CurrentFrame >= m_Frames.size() ||
@@ -138,11 +154,30 @@ RHIFrameResult DX12SceneContext::BeginFrame()
     frame.RetainedPipelines.clear();
     frame.RetainedTextures.clear();
     frame.RetainedRenderTargets.clear();
+    if (frame.ComputeWork != nullptr)
+    {
+        frame.ComputeWork->Complete(frame.ComputeSubmitted);
+        frame.ComputeWork.reset();
+        frame.ComputeSubmitted = false;
+    }
 
     // BeginFrame以降の失敗では記録中のCommandListが残るため、同Contextを再利用しません。
     m_FrameActive = true;
     m_FrameSubmitted = false;
     m_GraphicsPipelineBound = false;
+    frame.ComputeWork = std::move(m_PendingComputeWork);
+    if (frame.ComputeWork != nullptr)
+    {
+        // Graphics側の初期化前にComputeを記録し、同じSubmitで依存を維持します。
+        m_RecordingCompute = true;
+        const bool recorded = frame.ComputeWork->Record();
+        m_RecordingCompute = false;
+        if (recorded == false)
+        {
+            m_FatalError = true;
+            return RHIFrameResult::FatalError;
+        }
+    }
     if (m_FrameRenderer.BeginRenderTarget(m_SwapChain, *frame.CommandList) == false ||
         m_FrameRenderer.ClearRenderTarget(*frame.CommandList, m_ClearColor) == false)
     {
@@ -186,6 +221,7 @@ RHIFrameResult DX12SceneContext::EndFrame()
         return RHIFrameResult::FatalError;
     }
     m_FrameSubmitted = true;
+    m_Frames[m_CurrentFrame].ComputeSubmitted = true;
     return RHIFrameResult::Success;
 }
 
@@ -235,6 +271,15 @@ bool DX12SceneContext::Resize(uint32_t width, uint32_t height)
         return false;
     }
     m_CurrentFrame = 0;
+    for (auto& frame : m_Frames)
+    {
+        if (frame.ComputeWork != nullptr)
+        {
+            frame.ComputeWork->Complete(frame.ComputeSubmitted);
+            frame.ComputeWork.reset();
+            frame.ComputeSubmitted = false;
+        }
+    }
     m_Shared->Device.DrainDebugMessages();
     return true;
 }
@@ -709,9 +754,11 @@ bool DX12SceneContext::DrawIndexed(
 
 void DX12SceneContext::Shutdown()
 {
+    bool gpuCompleted = false;
     if (m_Shared != nullptr && m_Fence.IsValid() == true && m_Shared->Queue.IsValid() == true)
     {
-        if (m_Fence.SignalAndWait(m_Shared->Queue.GetHandle()) == false)
+        gpuCompleted = m_Fence.SignalAndWait(m_Shared->Queue.GetHandle());
+        if (gpuCompleted == false)
         {
             // Device Removed等ではGPU完了を保証できません。終了処理は継続し、
             // native Resourceの解放失敗をDebug Layerで追跡できるようにします。
@@ -726,6 +773,19 @@ void DX12SceneContext::Shutdown()
     m_GraphicsPipelineBound = false;
     m_ActiveOffscreenRenderTarget.reset();
     m_CurrentFrame = 0;
+    if (m_PendingComputeWork != nullptr)
+    {
+        m_PendingComputeWork->Complete(false);
+        m_PendingComputeWork.reset();
+    }
+    for (auto& frame : m_Frames)
+    {
+        if (frame.ComputeWork != nullptr)
+        {
+            frame.ComputeWork->Complete(gpuCompleted && frame.ComputeSubmitted);
+        }
+    }
+    m_RecordingCompute = false;
     // Fence待機を試みた後にFrame保持Buffer/PSO/Texture参照を先に解放します。
     // FrameRenderer・SwapChain・Deviceの破棄後まで旧Resourceを保持しません。
     m_Frames.clear();

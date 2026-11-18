@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <string>
 #include <vector>
@@ -43,6 +44,9 @@ struct RHIComputePipelineSpecification
     std::string OpenGLSource;
     RHIComputeExtent LocalSize{1, 1, 1};
     std::vector<RHIComputeBindingLayout> Layout;
+    std::vector<std::byte> DirectX12Bytecode;
+    std::vector<std::uint32_t> VulkanSpirv;
+    std::string VulkanEntryPoint = "main";
 };
 
 class RHIComputePipeline
@@ -71,6 +75,16 @@ public:
     virtual RHIComputeReadbackStatus Poll(std::vector<std::byte>& data) = 0;
 };
 
+// 次のExplicit Scene FrameのRender Pass開始前に記録する仕事です。
+// Contextは記録済みの仕事と所属リソースをFrameのGPU完了まで保持します。
+class RHIComputeFrameWork
+{
+public:
+    virtual ~RHIComputeFrameWork() = default;
+    virtual bool Record() = 0;
+    virtual void Complete(bool gpuCompleted) noexcept = 0;
+};
+
 class RHIComputeCommandEncoder
 {
 public:
@@ -86,6 +100,10 @@ public:
     virtual bool Barrier(RHIComputeConsumer consumer) = 0;
     virtual Ref<RHIComputeReadback> RequestBufferReadback(
         const Ref<RHIComputeResource>& resource, std::size_t offset, std::size_t size) = 0;
+    // Explicit Backendでは、リソース準備後に次Frameの描画前に記録を予約します。
+    // CaptureしたリソースはContextが完了を観測するまで保持されます。
+    using FrameRecorder = std::function<bool(RHIComputeCommandEncoder&)>;
+    virtual bool QueueFrame(FrameRecorder recorder) { (void)recorder; return false; }
 };
 
 } // namespace Raven
