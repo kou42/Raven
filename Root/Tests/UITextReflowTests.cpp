@@ -1353,6 +1353,86 @@ void TestSceneHierarchyReparentCommand()
     Raven::SetEditorCommandHistoryScene(nullptr);
 }
 
+void MeasureLargeSceneHierarchy()
+{
+    using Clock = std::chrono::steady_clock;
+    const auto milliseconds = [](Clock::time_point start)
+    {
+        return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+    };
+    std::cout << "entities,capture_ms,rebuild_ms,draw_ms,select_scroll_ms,collapse_ms,expand_ms,commands\n";
+    for (const std::size_t count : {1000u, 10000u})
+    {
+        Raven::Scene scene;
+        const auto root = scene.CreateEntity("Root");
+        auto selected = root;
+        for (std::size_t i = 1; i < count; ++i)
+        {
+            selected = scene.CreateEntity("Entity");
+            Check(scene.SetEntityParent(selected.GetHandle(), root.GetHandle()), "large scene parent");
+        }
+        Raven::UIContext context;
+        Raven::SceneHierarchyRavenPanel panel;
+        Check(panel.Attach(context, nullptr), "large scene panel attach");
+        auto start = Clock::now();
+        const auto snapshot = Raven::CaptureSceneHierarchySnapshot(&scene, selected);
+        const double capture = milliseconds(start);
+        start = Clock::now();
+        panel.Update(snapshot);
+        const double rebuild = milliseconds(start);
+        Check(panel.GetNodeCount() == count && panel.GetSelectedHandle() == selected.GetHandle(),
+            "large scene snapshot reaches hierarchy with selection");
+        Raven::UITreeView* tree = nullptr;
+        const auto find = [&](const auto& self, Raven::UIElement& node) -> void
+        {
+            if (auto* candidate = dynamic_cast<Raven::UITreeView*>(&node); candidate != nullptr)
+            {
+                tree = candidate;
+            }
+            for (const auto& child : node.GetChildren())
+            {
+                self(self, *child);
+            }
+        };
+        find(find, context.GetRootElement());
+        Check(tree != nullptr, "large scene hierarchy has TreeView");
+        auto* rootNode = tree->FindNode(root.GetHandle().Value());
+        auto* lastNode = tree->FindNode(selected.GetHandle().Value());
+        Check(rootNode != nullptr && lastNode != nullptr && lastNode->Parent == rootNode,
+            "large scene hierarchy resolves actual parent handle");
+        const auto frame = [&context]()
+        {
+            context.BeginFrame({800.0f, 600.0f});
+            context.EndFrame();
+        };
+        frame();
+        double draw = 0.0;
+        constexpr int samples = 30;
+        for (int i = 0; i < samples; ++i)
+        {
+            start = Clock::now();
+            frame();
+            draw += milliseconds(start);
+        }
+        const auto commands = context.GetDrawList().GetCommandCount();
+        start = Clock::now();
+        Check(tree->Select(rootNode) && tree->Select(lastNode), "large scene selection round trip");
+        tree->EnsureSelectedVisible();
+        const double select = milliseconds(start);
+        Check(tree->GetScrollOffset() > 0.0f, "large scene selection scrolls");
+        start = Clock::now();
+        Check(tree->SetExpanded(rootNode, false), "large scene collapse");
+        const double collapse = milliseconds(start);
+        Check(tree->GetSelectedNode() == rootNode && tree->GetScrollOffset() == 0.0f,
+            "large scene collapse restores visible selection");
+        start = Clock::now();
+        Check(tree->SetExpanded(rootNode, true), "large scene expand");
+        const double expand = milliseconds(start);
+        std::cout << count << ',' << capture << ',' << rebuild << ',' << draw / samples
+            << ',' << select << ',' << collapse << ',' << expand << ',' << commands << '\n';
+    }
+}
+
 void TestSceneHierarchyRavenPanel()
 {
     Raven::UIContext context;
@@ -5995,6 +6075,11 @@ void TestInspectorControllerRebind()
 
 int main(int argc, char** argv)
 {
+    if (argc == 2 && std::string(argv[1]) == "--measure-ui-scene-hierarchy")
+    {
+        MeasureLargeSceneHierarchy();
+        return 0;
+    }
     if (argc == 2 && std::string(argv[1]) == "--update-ui-snapshots")
     {
         TestUIDrawSnapshot(true);
