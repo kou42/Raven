@@ -11,6 +11,8 @@ public:
     ~OpenGLRHIDevice() override = default;
 
     RHIBackend GetBackend() const override;
+    RHIComputeCapabilities QueryComputeCapabilities() const override;
+    Ref<RHIComputeCommandEncoder> CreateComputeCommandEncoder() override;
 
     Ref<RHIBuffer> CreateBuffer(
         const RHIBufferSpecification& specification,

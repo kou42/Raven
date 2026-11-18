@@ -5,6 +5,7 @@
 
 #include "Raven/Core/Base.h"
 #include "Raven/Renderer/RHI/RHIBuffer.h"
+#include "Raven/Renderer/RHI/RHICompute.h"
 #include "Raven/Renderer/RHI/RHIGraphicsPipeline.h"
 #include "Raven/Renderer/RHI/RHITexture.h"
 #include "Raven/Renderer/RHI/RHITypes.h"
@@ -27,6 +28,9 @@ public:
     virtual ~RHIDevice() = default;
 
     virtual RHIBackend GetBackend() const = 0;
+
+    virtual RHIComputeCapabilities QueryComputeCapabilities() const { return {}; }
+    virtual Ref<RHIComputeCommandEncoder> CreateComputeCommandEncoder() { return nullptr; }
 
     virtual Ref<RHIBuffer> CreateBuffer(
         const RHIBufferSpecification& specification,

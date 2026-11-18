@@ -4,7 +4,7 @@
 
 対象: `kou42/Raven` / `master`
 
-状態: **Phase 00 の基盤監査・起動ベースライン記録済み。Phase 01 の Field / Storage と Phase 02 の RHI Compute 共通契約を設計済み。Compute 実装未着手**
+状態: **Phase 00〜02 の監査と共通契約を記録済み。Phase 03 の OpenGL Compute 実装と GPU Smoke Test が完了**
 
 ## 1. 目的とスコープ
 
@@ -256,13 +256,24 @@ Backend の対応確認に用いた仕様資料は [OpenGL 4.3 Reference Card](h
 
 ### Phase 03 — OpenGL Compute Smoke Test
 
-- [ ] Compute Shader コンパイル / リンク、Storage Buffer Binding、Dispatch を実装。
-- [ ] Memory Barrier と GPU→CPU Readback を実装。
-- [ ] 既知の配列演算を CPU 参照値と比較。
-- [ ] 3D Storage Texture 書込と描画側 Sampling の依存関係を確認。
-- [ ] 既存 OpenGL Scene / UI / Resize の回帰を確認。
+- [x] Compute Shader コンパイル / リンク、Storage Buffer Binding、Dispatch を実装。
+- [x] Memory Barrier と GPU→CPU Readback を実装。
+- [x] 既知の配列演算を CPU 参照値と比較。
+- [x] 3D Storage Texture 書込と描画側 Sampling の依存関係を確認。
+- [x] 既存 OpenGL Scene / UI / Resize の回帰を確認。
 
 **完了条件**: GPU計算結果を CPU と比較でき、Graphics への受け渡しが正しく動く。
+
+#### Phase 03 実装・検証記録（2026-11-19）
+
+- `RHIDevice` から Compute の能力を照会し、対応 Context では単一 Context の Compute Encoder を取得できる。GL 4.3 Core と必須の GL 関数を確認する。既存 Application は従来の 3.3 Context を使い、Compute 検証モードが 4.3 Context を明示的に作る。
+- Encoder は GLSL のコンパイル・リンク、Workgroup サイズと有効な Storage Binding の照合、SSBO と単一 Mip の R32F 3D Image の生成・Dispatch を担当する。Dispatch の後は、呼び出し側が次の Storage、Texture Sampling、Buffer コピーの用途を指定して Barrier を発行する。Graphics 側は同じ Context から 3D Texture を Sample できる。
+- Buffer Readback は指定範囲をステージング Buffer にコピーし、GL Sync の完了を待たずにポーリングする。完了時に CPU 所有のバイト列を返す。Encoder とハンドルはその Context がカレントの間に使用し、破棄前に解放する。初期範囲は全体 SSBO Binding、R32F 3D Image、Buffer Readback。Texture Readback や Compute 内の Uniform / Sampled Texture Binding は残課題。
+- RTX 3080、NVIDIA 610.60、OpenGL 4.3 Core で 19 要素の整数配列を 2 回 Dispatch し、Readback が CPU 参照値と完全一致した。Fragment Shader で 2×2×2 Texture の全 8 値をサンプリングし、Framebuffer の R 値が 8-bit 換算で 1 以内に一致した。ゼロ Workgroup と範囲外 Readback も拒否した。
+- 通常の OpenGL 3.3 Application で Scene と Raven UI を目視し、最大化 3840×2054 と復元 1920×1080 の両 Resize 後に描画を確認した。Window Close の終了コードは 0。
+- Debug / Release x64 の通常 Application と Debug x64 の GPU 統合テストをビルドし、いずれも終了コード 0。Phase 00 と同じ GLFW 依存と PDB 回避設定を使用した。
+
+GPU テストは `RavenUIGPUTest=true` の Debug x64 ビルド後、`Root/Root` から `../x64/Debug/RavenUIGPUTests.exe --opengl-compute` で実行する。4.3 Context を利用できない場合はテストが失敗として報告する。
 
 ### Phase 04 — DirectX 12 / Vulkan Compute
 
@@ -369,7 +380,7 @@ CPU の解析的 SDF と Field 参照実装は Phase 02〜04 と並行可能。P
 - Compute→Graphics、Compute→Compute、Compute→Readback の同期を個別にテスト。
 - Solver は Field を利用するが、Field の評価関数内で Solver の時間発展を起動しない。
 - 実装していない API・テストを「実装済み」と記録しない。
-- この文書はロードマップのみ。**現時点ではコード実装・実機検証は未実施**。
+- 実装と実機検証の結果は、該当する Phase の記録に追記する。
 
 ## 7. 次回着手時のチェックポイント
 

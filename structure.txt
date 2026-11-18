@@ -344,6 +344,9 @@ D:.
     |   |   |   |   MutableDataDocument.h
     |   |   |   |
     |   |   |   +---Formats
+    |   |   |   |   +---Binary
+    |   |   |   |   |       BinaryDocument.cpp
+    |   |   |   |   |       BinaryDocument.h
     |   |   |   |   +---Json
     |   |   |   |   |       JsonParser.cpp
     |   |   |   |   |       JsonParser.h
@@ -361,6 +364,9 @@ D:.
     |   |   |   |       Serialization.h
     |   |   |   |       Serialization.inl
     |   |   |   \---Tests
+    |   |   |           CompiledTestAsset.cpp
+    |   |   |           CompiledTestAsset.h
+    |   |   |           CompiledTestAssetTests.cpp
     |   |   |           DataBenchmarkMemory.cpp
     |   |   |           DataBenchmarkMemory.h
     |   |   |           DataDocumentTests.cpp
@@ -380,6 +386,7 @@ D:.
     |   |   |           ParallelDeserializeTests.h
     |   |   |           PHASE8_MEASUREMENTS.md
     |   |   |           PHASE9_EDITING.md
+    |   |   |           PHASE10_BINARY_ASSETS.md
     |   |   |           Phase8Time.csv
     |   |   |           Phase8Memory.csv
     |   |   |           README.md
@@ -391,16 +398,11 @@ D:.
     |   |   |           StructuredDataTestAsset.v1.json
     |   |   |           StructuredDataTestAssetTests.cpp
     |   |   +---Debug
-    |   |   |   |   BrowserDebugConfig.h
-    |   |   |   |   BrowserDebugServer.cpp
-    |   |   |   |   BrowserDebugServer.h
-    |   |   |   |   BrowserDebugViewer.cpp
-    |   |   |   |   BrowserDebugViewer.h
-    |   |   |   |
-    |   |   |   \---Generated
-    |   |   |           CandidateRejects.svg
-    |   |   |           Startup.svg
-    |   |   |           Viewer.html
+    |   |   |       BrowserDebugConfig.h
+    |   |   |       BrowserDebugServer.cpp
+    |   |   |       BrowserDebugServer.h
+    |   |   |       BrowserDebugViewer.cpp
+    |   |   |       BrowserDebugViewer.h
     |   |   +---Diagnostics
     |   |   |   |   RemoteDiagnostics.cpp
     |   |   |   |   RemoteDiagnostics.h
@@ -592,6 +594,29 @@ D:.
     |   |   |       MathVector.h
     |   |   |       TransformMath.cpp
     |   |   |       TransformMath.h
+    |   |   +---Network
+    |   |   |   |   ControlMessageCodec.cpp
+    |   |   |   |   ControlMessageCodec.h
+    |   |   |   |   ControlMessageReceiver.cpp
+    |   |   |   |   ControlMessageReceiver.h
+    |   |   |   |
+    |   |   |   +---Tests
+    |   |   |   |       ControlMessageBenchmarks.cpp
+    |   |   |   |       ControlMessageTests.cpp
+    |   |   |   |       ControlMessageTests.h
+    |   |   |   |       PHASE11_CONTROL_MESSAGES.md
+    |   |   |   |       PHASE11_MEASUREMENTS.md
+    |   |   |   |       Phase11Memory.csv
+    |   |   |   |       Phase11MemoryMetadata.json
+    |   |   |   |       Phase11Time.csv
+    |   |   |   |       Phase11TimeMetadata.json
+    |   |   |   |       Phase11Traffic.csv
+    |   |   |   |       WindowsTcpTests.cpp
+    |   |   |   |       WindowsTcpTests.h
+    |   |   |   \---Windows
+    |   |   |           WindowsControlStream.cpp
+    |   |   |           WindowsTcpSocket.cpp
+    |   |   |           WindowsTcpSocket.h
     |   |   +---Physics
     |   |   |   |   Contact.h
     |   |   |   |   PhysicsSimulationWorld.cpp
@@ -870,6 +895,8 @@ D:.
     |   |   |   |   |   OpenGLVertexBuffer.h
     |   |   |   |   |
     |   |   |   |   \---RHI
+    |   |   |   |           OpenGLCompute.cpp
+    |   |   |   |           OpenGLCompute.h
     |   |   |   |           OpenGLRHIBuffer.cpp
     |   |   |   |           OpenGLRHIBuffer.h
     |   |   |   |           OpenGLRHICommandList.cpp
@@ -992,6 +1019,7 @@ D:.
     |   |   |   |       RHIBuffer.h
     |   |   |   |       RHIClearContext.h
     |   |   |   |       RHICommandList.h
+    |   |   |   |       RHICompute.h
     |   |   |   |       RHIDevice.h
     |   |   |   |       RHIExplicitSceneRuntimeFactory.cpp
     |   |   |   |       RHIExplicitSceneRuntimeFactory.h
@@ -1006,6 +1034,7 @@ D:.
     |   |   |   |       RHIOffscreenRenderTarget.h
     |   |   |   |       RHIResource.cpp
     |   |   |   |       RHIResource.h
+    |   |   |   |       RHISceneDrawItemBuilder.cpp
     |   |   |   |       RHISceneDrawItemBuilder.h
     |   |   |   |       RHISceneFrameLifecycle.h
     |   |   |   |       RHISceneMeshRenderer.cpp
@@ -1065,8 +1094,12 @@ D:.
     |   |   |           SceneGraphSelfTests.h
     |   |   |           SceneLifecycleSelfTests.cpp
     |   |   |           SceneLifecycleSelfTests.h
+    |   |   |           SceneRuntimeComparisonTests.cpp
+    |   |   |           SceneRuntimeComparisonTests.h
     |   |   |           SceneTransformSelfTests.cpp
     |   |   |           SceneTransformSelfTests.h
+    |   |   |           SceneViewSelfTests.cpp
+    |   |   |           SceneViewSelfTests.h
     |   |   \---UI
     |   |       +---Animation
     |   |       |       UIAnimationBinding.cpp

@@ -1031,8 +1031,14 @@ bool TestUIGeometryParity()
 }
 } // namespace
 
+bool RunOpenGLComputeGPUIntegrationTests();
+
 int main(int argc, char** argv)
 {
+    if (argc == 2 && std::string(argv[1]) == "--opengl-compute")
+    {
+        return RunOpenGLComputeGPUIntegrationTests() ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
     if (argc == 2 && std::string(argv[1]) == "--ui-geometry-parity")
     {
         return TestUIGeometryParity() ? EXIT_SUCCESS : EXIT_FAILURE;
