@@ -1,3 +1,8 @@
+#include "Raven/Core/Input.h"
+#include "Raven/UI/Animation/UIAnimationBinding.h"
+#include "Raven/UI/Navigation/UINavigationManager.h"
+#include "Raven/UI/Screens/HUDScreen.h"
+#include "Raven/UI/Screens/TitleScreen.h"
 #include <iomanip>
 #include <locale>
 #include <sstream>
@@ -508,6 +513,58 @@ public:
         ++Calls;
     }
 };
+
+void TestRuntimeToolkitNavigation()
+{
+    int actions = 0;
+    Raven::UIContext context;
+    auto renderer = std::make_unique<FramebufferSizeRenderer>();
+    auto* observed = renderer.get();
+    context.SetRenderer(std::move(renderer));
+    Raven::UINavigationManager navigation(context);
+    auto hud = std::make_unique<Raven::HUDScreen>();
+    Check(navigation.PushScreen(std::move(hud)), "runtime toolkit HUD");
+    auto title = std::make_unique<Raven::TitleScreen>(nullptr, [] {}, [&actions] { ++actions; }, [] {});
+    auto* screen = title.get();
+    Check(navigation.PushScreen(std::move(title)), "runtime toolkit menu");
+    auto& root = screen->GetRootElement();
+    auto* settings = root.FindByPath("Menu/SettingsButton");
+    Check(settings != nullptr, "runtime toolkit Settings button");
+    Raven::PropertyAnimationTrack<float> track;
+    track.Binding.TargetPath = "Menu/SettingsButton";
+    track.Binding.Property = "Opacity";
+    track.Curve.GetKeys().push_back({0.0f, 1.0f});
+    track.Curve.GetKeys().push_back({1.0f, 0.5f});
+    Raven::AnimationClip clip(1.0f);
+    Check(clip.AddPropertyTrack(std::move(track)), "runtime toolkit animation track");
+    Raven::UIAnimationBinding binding;
+    Check(binding.Resolve(root, clip) && binding.Apply(clip, 1.0f),
+        "runtime toolkit applies shared animation");
+    CheckNear("runtime toolkit opacity", settings->GetOpacity(), 0.5f);
+    context.BeginFrame({800.0f, 600.0f});
+    context.EndFrame();
+    Check(observed->Calls == 1u && context.GetDrawList().GetCommandCount() > 0u,
+        "runtime toolkit submits UIContext draw list through UIRenderer");
+
+    Raven::GamepadState state{};
+    screen->UpdateGamepad(&state);
+    for (int step = 0; step < 2; ++step)
+    {
+        state.LeftStickY = -1.0f;
+        screen->UpdateGamepad(&state);
+        screen->UpdateGamepad(&state);
+        state.LeftStickY = 0.0f;
+        screen->UpdateGamepad(&state);
+    }
+    Check(context.GetFocusedElement() == settings, "runtime toolkit stick moves focus once per press");
+    state.ButtonA = true;
+    screen->UpdateGamepad(&state);
+    screen->UpdateGamepad(&state);
+    Check(actions == 1, "runtime toolkit confirm uses existing button action once");
+    screen->UpdateGamepad(nullptr);
+    screen->UpdateGamepad(&state);
+    Check(actions == 1, "runtime toolkit reconnect does not replay held confirm");
+}
 
 void TestWindowFramebufferMetrics()
 {
@@ -6119,6 +6176,7 @@ int main(int argc, char** argv)
     TestUIFrameMetrics();
     TestUIGeometryBuilder();
     TestWindowFramebufferMetrics();
+    TestRuntimeToolkitNavigation();
     TestTabSystem();
     TestDragDropRouting();
     TestTreeViewDragDrop();

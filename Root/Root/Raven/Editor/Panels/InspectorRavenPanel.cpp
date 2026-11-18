@@ -18,6 +18,29 @@ namespace Raven
 namespace
 {
 
+// 表示寸法とラベル構築を共有し、編集コールバックと値域はSection側で決めます。
+Scope<UIElement> CreateNumberPropertyRow(const Ref<UIFontAtlas>& font,
+    const std::string& label, double step, Scope<UIInputNumber>& input)
+{
+    auto row = CreateScope<UIElement>();
+    row->SetLayoutMode(UILayoutMode::Horizontal);
+    row->SetSpacing(6.0f);
+    row->SetPreferredSize(math::Vec2(294.0f, 30.0f));
+
+    auto caption = CreateScope<UILabel>();
+    caption->SetFont(font);
+    caption->SetText(label);
+    caption->SetPreferredSize(math::Vec2(100.0f, 30.0f));
+    caption->SetHitTestVisible(false);
+    row->AddChild(std::move(caption));
+
+    input = CreateScope<UIInputNumber>();
+    input->SetFont(font);
+    input->SetStep(step);
+    input->SetPreferredSize(math::Vec2(188.0f, 30.0f));
+    return row;
+}
+
 std::string FormatFloat(float value)
 {
     char buffer[64];
@@ -366,22 +389,8 @@ void InspectorRavenPanel::AddTransformInput(
     std::size_t valueIndex,
     double step)
 {
-    auto row = CreateScope<UIElement>();
-    row->SetLayoutMode(UILayoutMode::Horizontal);
-    row->SetSpacing(6.0f);
-    row->SetPreferredSize(math::Vec2(294.0f, 30.0f));
-
-    auto caption = CreateScope<UILabel>();
-    caption->SetFont(font);
-    caption->SetText(label);
-    caption->SetPreferredSize(math::Vec2(100.0f, 30.0f));
-    caption->SetHitTestVisible(false);
-    row->AddChild(std::move(caption));
-
-    auto input = CreateScope<UIInputNumber>();
-    input->SetFont(font);
-    input->SetStep(step);
-    input->SetPreferredSize(math::Vec2(188.0f, 30.0f));
+    Scope<UIInputNumber> input;
+    auto row = CreateNumberPropertyRow(font, label, step, input);
     input->SetOnValueChanged(
         [this, valueIndex](double value)
         {
@@ -592,23 +601,9 @@ void InspectorRavenPanel::AddCameraInput(
     double minimum,
     double maximum)
 {
-    auto row = CreateScope<UIElement>();
-    row->SetLayoutMode(UILayoutMode::Horizontal);
-    row->SetSpacing(6.0f);
-    row->SetPreferredSize(math::Vec2(294.0f, 30.0f));
-
-    auto caption = CreateScope<UILabel>();
-    caption->SetFont(font);
-    caption->SetText(label);
-    caption->SetPreferredSize(math::Vec2(100.0f, 30.0f));
-    caption->SetHitTestVisible(false);
-    row->AddChild(std::move(caption));
-
-    auto input = CreateScope<UIInputNumber>();
-    input->SetFont(font);
-    input->SetStep(step);
+    Scope<UIInputNumber> input;
+    auto row = CreateNumberPropertyRow(font, label, step, input);
     input->SetRange(minimum, maximum);
-    input->SetPreferredSize(math::Vec2(188.0f, 30.0f));
     input->SetOnValueChanged(
         [this, valueIndex](double value)
         {
@@ -861,23 +856,9 @@ void InspectorRavenPanel::AddRigidBodyInput(
     double minimum,
     double maximum)
 {
-    auto row = CreateScope<UIElement>();
-    row->SetLayoutMode(UILayoutMode::Horizontal);
-    row->SetSpacing(6.0f);
-    row->SetPreferredSize(math::Vec2(294.0f, 30.0f));
-
-    auto caption = CreateScope<UILabel>();
-    caption->SetFont(font);
-    caption->SetText(label);
-    caption->SetPreferredSize(math::Vec2(100.0f, 30.0f));
-    caption->SetHitTestVisible(false);
-    row->AddChild(std::move(caption));
-
-    auto input = CreateScope<UIInputNumber>();
-    input->SetFont(font);
-    input->SetStep(step);
+    Scope<UIInputNumber> input;
+    auto row = CreateNumberPropertyRow(font, label, step, input);
     input->SetRange(minimum, maximum);
-    input->SetPreferredSize(math::Vec2(188.0f, 30.0f));
     input->SetOnValueChanged(
         [this, valueIndex](double value)
         {
@@ -1115,21 +1096,9 @@ void InspectorRavenPanel::AddColliderInput(
     double minimum,
     double maximum)
 {
-    auto row = CreateScope<UIElement>();
-    row->SetLayoutMode(UILayoutMode::Horizontal);
-    row->SetSpacing(6.0f);
-    row->SetPreferredSize(math::Vec2(294.0f, 30.0f));
-    auto caption = CreateScope<UILabel>();
-    caption->SetFont(font);
-    caption->SetText(label);
-    caption->SetPreferredSize(math::Vec2(100.0f, 30.0f));
-    caption->SetHitTestVisible(false);
-    row->AddChild(std::move(caption));
-    auto input = CreateScope<UIInputNumber>();
-    input->SetFont(font);
-    input->SetStep(step);
+    Scope<UIInputNumber> input;
+    auto row = CreateNumberPropertyRow(font, label, step, input);
     input->SetRange(minimum, maximum);
-    input->SetPreferredSize(math::Vec2(188.0f, 30.0f));
     input->SetOnValueChanged(
         [this, valueIndex](double value)
         {

@@ -6,7 +6,6 @@ TreeViewは1回の描画内で、展開済みノード順序・スクロール�
 
 CPU回帰に1,000／10,000行の合成データを追加しました。TreeViewの末尾選択・スクロール・折り畳み後の選択と描画コマンド数、およびTableが可視行のセルだけを取得することを確認します。実Sceneの構築時間や操作時間はこのテストの測定対象外です。
 
-M7ロードマップの完了には、実Sceneでの計測、プロパティ編集部品の共通化、Runtime HUD/Menu・Gamepad・Animationの統合検証、Graph/Timelineの設計検討、Dear ImGui移行候補の選定が残ります。
 
 ## SceneからHierarchyまでの計測
 
@@ -18,3 +17,19 @@ Release x64でSceneに親1体と子を生成し、CaptureSceneHierarchySnapshot 
 | 10,000 | 4.477 | 183.940 | 0.236 | 2.833 | 0.733 | 0.218 | 9 |
 
 リポジトリルートからReleaseのUIテストexeに --measure-ui-scene-hierarchy を渡すと再実行できます。実Entityの親子関係、末尾選択へのスクロール、折り畳みでの親への選択復帰も検査します。初回構築には繰り返しのノード検索があり、大規模Sceneの初回表示時間は課題として残ります。この計測は単一の親に子が並ぶ構成であり、深い階層との比較や変更前後の速度比較は行っていません。
+
+## EditorとRuntimeの共通化
+
+InspectorのTransform・Camera・RigidBody・Colliderで数値プロパティ行のラベル、寸法、入力欄の構築を共有しました。値域と編集コールバックは各Sectionで指定するため、既存ControllerのPreview、Commit、Undo境界を保ちます。Hierarchyは既存TreeViewとSnapshot境界を再利用しています。
+
+タイトルSceneの最前面メニューは、メインWindowにフォーカスがある間だけ標準Gamepad 0を読み取ります。縦Stickの新しい入力でメニュー内のフォーカスを移動し、Aの押下でUIButtonの既存Enter処理を使います。初回サンプル、再接続、別Screenからの復帰では保持中の入力を再発火しません。Settings内のGamepad操作、実機コントローラーは未検証です。
+
+CPUテストでHUDとTitle Menuを同じUINavigationManagerへ接続し、UIAnimationBindingでボタンのOpacityを変え、そのUIContextがUIRendererへフレームを渡すことを確認します。Gamepad状態はテストから注入し、既存アクションの呼出回数を検証します。測定用Rendererを使うため、このテストは実GPUのTitle/HUD描画を検証するものではありません。
+
+## Graph / Timelineの設計検討
+
+共有候補は、論理座標の表示区間、パンとズーム、Clip、ポインタの逆変換、安定IDによる選択です。意味の異なるデータはそれぞれのモデルに残します。Graphはノード・ポート・接続、Timelineは時刻・Track・Keyを管理し、Widgetが編集要求をControllerへ渡します。描画は既存UIDrawListへ出力し、まずDiagnosticsのMeasurementTimelineとAnimationの時刻表示で共有境界を試せます。接続編集とキー操作を同じWidgetへ押し込む設計は、Hit TestやUndoの粒度が異なるため対象外です。
+
+## Dear ImGui移行候補の棚卸し
+
+現行Ravenソースに直接のDear ImGui呼び出しは確認できませんでした。HierarchyとInspectorは既存Ravenパネルを基準に、選択・名前変更・プロパティ編集とUndoを回帰で確認します。Statistics・Diagnostics・Animation Debugも既存RavenパネルとCPUテストがあり、追加のDear ImGui移行対象は特定できませんでした。Graph / Timelineを今後追加する場合の候補は、Diagnosticsの計測履歴とAnimation Debugの時刻表示です。
