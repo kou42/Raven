@@ -8,6 +8,8 @@
 namespace Raven
 {
 
+VkImageView GetVulkanComputeTexture(const Ref<RHIComputeResource>& resource, VkDevice device);
+
 // Scene Contextが所有するVkDevice/RenderPassを借用するRHIDevice Adapterです。
 // Contextより長く保持しないこと。Resize後は新しいRenderPassでPipelineを再生成します。
 // Vertex/Index Buffer、Sampled Texture、Editor用off-screen Targetを共通RHI経由で生成します。
@@ -24,6 +26,9 @@ public:
     {
         return RHIBackend::Vulkan;
     }
+
+    RHIComputeCapabilities QueryComputeCapabilities() const override;
+    Ref<RHIComputeCommandEncoder> CreateComputeCommandEncoder() override;
 
     Ref<RHIBuffer> CreateBuffer(
         const RHIBufferSpecification& specification,

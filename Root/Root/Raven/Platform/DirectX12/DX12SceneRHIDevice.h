@@ -11,6 +11,8 @@
 namespace Raven
 {
 
+ID3D12Resource* GetDX12ComputeTexture(const Ref<RHIComputeResource>& resource, ID3D12Device* device);
+
 // DX12SceneContextが所有するDeviceを借用し、Entity MeshのGPU Bufferを生成します。
 // 通常Textureの初期RGBA8転送に加え、Editor Viewport用のRTV / SRV共有Targetも生成します。
 class DX12SceneRHIDevice final : public RHIDevice
@@ -25,6 +27,9 @@ public:
     {
         return RHIBackend::DirectX12;
     }
+
+    RHIComputeCapabilities QueryComputeCapabilities() const override;
+    Ref<RHIComputeCommandEncoder> CreateComputeCommandEncoder() override;
 
     // Vulkan側と同じScene入口で共有Meshを1回ずつ準備します。
     // DX12のDraw Commandが揃うまでは描画自体は呼び出し側で行いません。

@@ -93,11 +93,9 @@ VulkanFrameResult VulkanFrameRenderer::BeginSceneColorTarget(
     barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     barrier.subresourceRange.levelCount = 1;
     barrier.subresourceRange.layerCount = 1;
-    const VkPipelineStageFlags sourceStage =
-        oldLayout == VK_IMAGE_LAYOUT_UNDEFINED
-        ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
-        : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    vkCmdPipelineBarrier(commandBuffer.GetHandle(), sourceStage,
+    // Layout遷移自体もAcquire Semaphoreの待機Stageより後に実行します。
+    // これによりSwapChainを参照しない前段のComputeは先に実行できます。
+    vkCmdPipelineBarrier(commandBuffer.GetHandle(), VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
         0, 0, nullptr, 0, nullptr, 1, &barrier);
     m_ColorTargetActive = true;

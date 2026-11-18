@@ -105,8 +105,25 @@ bool VulkanSceneContext::Init(Window& window, VulkanSceneContext* sharedContext,
     m_RecordedBuffers.resize(m_FrameSync.GetFrameCount());
     m_SubmittedBufferFrames.assign(m_FrameSync.GetFrameCount(), false);
     m_RecordedOffscreenRenderTargets.resize(m_FrameSync.GetFrameCount());
+    m_RecordedComputeWork.resize(m_FrameSync.GetFrameCount());
     m_ClearColor.float32[3] = 1.0f;
     return true;
+}
+
+bool VulkanSceneContext::QueueComputeWork(const Ref<RHIComputeFrameWork>& work)
+{
+    if (work == nullptr || m_PendingComputeWork != nullptr || m_FrameActive ||
+        m_FatalError || m_Instance == nullptr || m_Instance->IsValid() == false)
+    {
+        return false;
+    }
+    m_PendingComputeWork = work;
+    return true;
+}
+
+VkCommandBuffer VulkanSceneContext::GetComputeCommandBuffer() const
+{
+    return m_RecordingCompute ? GetActiveCommandBuffer() : VK_NULL_HANDLE;
 }
 
 RHIFrameResult VulkanSceneContext::BeginFrame()
@@ -141,7 +158,8 @@ RHIFrameResult VulkanSceneContext::BeginFrame()
     // 前回SubmitのBufferを解放してから、新しいDrawを記録します。
     if (frame >= m_RecordedBuffers.size() ||
         frame >= m_SubmittedBufferFrames.size() ||
-        frame >= m_RecordedOffscreenRenderTargets.size())
+        frame >= m_RecordedOffscreenRenderTargets.size() ||
+        frame >= m_RecordedComputeWork.size())
     {
         m_FatalError = true;
         return RHIFrameResult::FatalError;
@@ -158,12 +176,30 @@ RHIFrameResult VulkanSceneContext::BeginFrame()
         }
     }
     m_RecordedOffscreenRenderTargets[frame].clear();
+    if (m_RecordedComputeWork[frame] != nullptr)
+    {
+        m_RecordedComputeWork[frame]->Complete(m_SubmittedBufferFrames[frame]);
+        m_RecordedComputeWork[frame].reset();
+    }
     m_SubmittedBufferFrames[frame] = false;
 
     // Acquire成功後に記録が失敗した場合はSemaphoreが未消費になり得ます。
     // FatalError後は同じContextで次Frameを開始せず、Shutdownして再生成します。
     m_FrameActive = true;
     m_ActiveFrame = frame;
+    m_RecordedComputeWork[frame] = std::move(m_PendingComputeWork);
+    if (m_RecordedComputeWork[frame] != nullptr)
+    {
+        // DispatchはRender Pass外で記録し、描画と同じCommand Bufferで順序を保ちます。
+        m_RecordingCompute = true;
+        const bool recorded = m_RecordedComputeWork[frame]->Record();
+        m_RecordingCompute = false;
+        if (recorded == false)
+        {
+            m_FatalError = true;
+            return RHIFrameResult::FatalError;
+        }
+    }
     if (m_FrameRenderer.BeginSceneColorTarget(m_SwapChain, commandBuffer) !=
         VulkanFrameResult::Success)
     {
@@ -276,6 +312,7 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
     m_RecordedOffscreenRenderTargets.clear();
     m_ActiveOffscreenRenderTarget.reset();
     m_RecordedBuffers.clear();
+    CompleteComputeWork(true);
     m_SubmittedBufferFrames.clear();
     // RenderPass再生成後に古いPipelineをBindしないようnative handleを無効化します。
     for (const auto& pipeline : m_GraphicsPipelines)
@@ -300,6 +337,7 @@ bool VulkanSceneContext::Resize(uint32_t width, uint32_t height)
     m_RecordedBuffers.resize(m_FrameSync.GetFrameCount());
     m_SubmittedBufferFrames.assign(m_FrameSync.GetFrameCount(), false);
     m_RecordedOffscreenRenderTargets.resize(m_FrameSync.GetFrameCount());
+    m_RecordedComputeWork.resize(m_FrameSync.GetFrameCount());
     return true;
 }
 
@@ -1074,12 +1112,29 @@ void VulkanSceneContext::RegisterOffscreenRenderTarget(
     m_OffscreenRenderTargets.push_back(renderTarget);
 }
 
+void VulkanSceneContext::CompleteComputeWork(bool gpuCompleted)
+{
+    for (std::size_t slot = 0; slot < m_RecordedComputeWork.size(); ++slot)
+    {
+        if (m_RecordedComputeWork[slot] != nullptr)
+        {
+            m_RecordedComputeWork[slot]->Complete(gpuCompleted && m_SubmittedBufferFrames[slot]);
+        }
+    }
+    m_RecordedComputeWork.clear();
+}
+
 void VulkanSceneContext::Shutdown()
 {
-    if ((m_Instance != nullptr && m_Instance->IsValid() == true))
-    {
+    const bool gpuCompleted = m_Instance != nullptr && m_Instance->IsValid() == true &&
         GetDevice().WaitIdle();
+    CompleteComputeWork(gpuCompleted);
+    if (m_PendingComputeWork != nullptr)
+    {
+        m_PendingComputeWork->Complete(false);
+        m_PendingComputeWork.reset();
     }
+    m_RecordingCompute = false;
     // Device破棄前に、外部がRefを保持しているBufferもnative handleを解放します。
     // WaitIdle済みであることを前提にするため、Buffer側で再度同期しません。
     for (const auto& weakBuffer : m_Buffers)

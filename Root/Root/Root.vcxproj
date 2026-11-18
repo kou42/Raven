@@ -169,6 +169,7 @@
     <ClInclude Include="..\Tests\UIPerformanceTests.h" />
     <ClCompile Include="..\Tests\UIFontTextureGPUIntegrationTests.cpp" Condition="'$(RavenUIGPUTest)'=='true'" />
     <ClCompile Include="..\Tests\OpenGLComputeGPUIntegrationTests.cpp" Condition="'$(RavenUIGPUTest)'=='true'" />
+    <None Include="..\Tests\ComputeShaders\Smoke.hlsl;..\Tests\ComputeShaders\Smoke.comp;..\Tests\ComputeShaders\Smoke.vert;..\Tests\ComputeShaders\Smoke.frag" />
     <ClCompile Include="src\glad.c" />
     <ClCompile Include="Raven\**\*.cpp" />
     <!-- Core/JsonParser.cppとData/Formats/Json/JsonParser.cppが同じJsonParser.objへ

@@ -4,7 +4,7 @@
 
 対象: `kou42/Raven` / `master`
 
-状態: **Phase 00〜02 の監査と共通契約を記録済み。Phase 03 の OpenGL Compute 実装と GPU Smoke Test が完了**
+状態: **Phase 00〜02 の監査と共通契約を記録済み。Phase 03〜04 の OpenGL / DX12 / Vulkan Compute 実装と GPU Smoke Test が完了**
 
 ## 1. 目的とスコープ
 
@@ -277,13 +277,38 @@ GPU テストは `RavenUIGPUTest=true` の Debug x64 ビルド後、`Root/Root` 
 
 ### Phase 04 — DirectX 12 / Vulkan Compute
 
-- [ ] DX12 Compute PSO、Root Signature、SRV/UAV、Dispatch、UAV/Resource Barrier。
-- [ ] Vulkan Compute Pipeline、Descriptor、`vkCmdDispatch`、Image Layout / Pipeline Barrier。
-- [ ] GPU Resource lifetime、Frame内依存、Submit / Present を検証。
-- [ ] 3 Backend で同一テストデータの結果を許容誤差内で比較。
-- [ ] DX12 Debug Layer、Vulkan Validation Layer、Resize / Scene 切替を検証。
+- [x] DX12 Compute PSO、Root Signature、SRV/UAV、Dispatch、UAV/Resource Barrier。
+- [x] Vulkan Compute Pipeline、Descriptor、`vkCmdDispatch`、Image Layout / Pipeline Barrier。
+- [x] GPU Resource lifetime、Frame内依存、Submit / Present を検証。
+- [x] 3 Backend で同一テストデータの結果を許容誤差内で比較。
+- [x] DX12 Debug Layer、Vulkan Validation Layer、Resize / Scene 切替を検証。
 
 **完了条件**: 3 Backend で Compute + Graphics の Smoke Test が成功し、重大な Validation error がない。
+
+#### Phase 04 実装・検証記録（2026-11-19）
+
+- DX12 は DXIL、Compute PSO、Compute Root Signature と UAV Descriptor Table を使う。初期データは Upload Heap から Storage Buffer に転送する。Compute 同士は UAV Barrier、Graphics への受け渡しは Texture の Shader Resource 遷移、Readback は Copy Source 遷移で同期する。
+- Vulkan は既存 Graphics Queue Family の Compute 対応を確認し、SPIR-V、Compute Pipeline、Storage Buffer / Image Descriptor を使う。3D Image は `GENERAL` と `SHADER_READ_ONLY_OPTIMAL` を使い分け、Readback の転送と CPU 参照を Barrier で同期する。SwapChain Image の Layout 遷移は Acquire Semaphore の待機 Stage に接続する。
+- 両 Backend とも `QueueFrame` で描画前の Compute を予約する。既存 Frame が GPU 完了を観測するまで、Pipeline、Descriptor、Storage、Readback 先を保持する。Buffer Readback は完了確認後に CPU 所有のコピーを返す。初期対象は全体 Storage Buffer Binding、単一 Mip R32F 3D Image、Buffer Readback。Smoke Test の Graphics は Backend の Sampled View / SRV を使う。
+- RTX 3080 で 3 Backend とも整数 19 要素が CPU 参照値と完全一致し、3D Texture の全 8 ボクセルを Fragment / Pixel Shader で読み、Framebuffer の R 値が 8-bit 換算で 1 以内に一致した。DX12 / Vulkan は 2 つの Compute Frame で Storage を再利用し、各 Frame の Present 後の SceneManager による Primary Scene 交換、Resize 後の Submit / Present、フェンス完了後の Readback を検証した。
+- DX12 Debug Layer と GPU-Based Validation、Vulkan Khronos Validation と同期検証を有効にし、最終 GPU テストの Validation error は 0 件。Vulkan の Loader には重複する Epic Online Services Overlay Layer の警告が 1 件あった。通常の DX12 / Vulkan Application でも、実ウィンドウの最大化による Resize 後に Scene と Raven UI が描画され、正常終了することを確認した。
+- Debug / Release x64 と Debug x64 GPU 統合テストをビルドし、既存 Explicit Frame / Scene Lifecycle セルフテストも成功した。Phase 00 と同じ GLFW 依存の補完と PDB 回避設定を使用した。
+
+検証用 Shader をリポジトリルートから Vulkan SDK の `glslc` / `dxc` で生成する。
+
+```powershell
+$out = New-Item -ItemType Directory -Force Root/Tests/x64/ComputeShaders
+foreach ($stage in @('comp', 'vert', 'frag')) {
+    & "$env:VULKAN_SDK/Bin/glslc.exe" "Root/Tests/ComputeShaders/Smoke.$stage" -o "$out/Smoke.$stage.spv"
+    if ($LASTEXITCODE -ne 0) { throw "glslc failed ($stage)" }
+}
+foreach ($stage in @('cs', 'vs', 'ps')) {
+    & "$env:VULKAN_SDK/Bin/dxc.exe" -T "${stage}_6_0" -E "$($stage.ToUpperInvariant())Main" Root/Tests/ComputeShaders/Smoke.hlsl -Fo "$out/Smoke.$stage.dxil"
+    if ($LASTEXITCODE -ne 0) { throw "dxc failed ($stage)" }
+}
+```
+
+`RavenUIGPUTest=true` の Debug x64 ビルド後、`Root/Root` から `../x64/Debug/RavenUIGPUTests.exe` を `--opengl-compute`、`--dx12-compute`、`--vulkan-compute` で実行する。DX12 は `RAVEN_RHI_VALIDATION=1` と `RAVEN_DX12_GPU_VALIDATION=1`、Vulkan は `RAVEN_RHI_VALIDATION=1` と `VK_LAYER_VALIDATE_SYNC=1` を設定する。
 
 ### Phase 05 — GPU Dense SDF
 
