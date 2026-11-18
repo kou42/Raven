@@ -30,6 +30,10 @@ CPUテストでHUDとTitle Menuを同じUINavigationManagerへ接続し、UIAnim
 
 共有候補は、論理座標の表示区間、パンとズーム、Clip、ポインタの逆変換、安定IDによる選択です。意味の異なるデータはそれぞれのモデルに残します。Graphはノード・ポート・接続、Timelineは時刻・Track・Keyを管理し、Widgetが編集要求をControllerへ渡します。描画は既存UIDrawListへ出力し、まずDiagnosticsのMeasurementTimelineとAnimationの時刻表示で共有境界を試せます。接続編集とキー操作を同じWidgetへ押し込む設計は、Hit TestやUndoの粒度が異なるため対象外です。
 
-## Dear ImGui移行候補の棚卸し
+## Dear ImGuiの完全撤去
 
-現行Ravenソースに直接のDear ImGui呼び出しは確認できませんでした。HierarchyとInspectorは既存Ravenパネルを基準に、選択・名前変更・プロパティ編集とUndoを回帰で確認します。Statistics・Diagnostics・Animation Debugも既存RavenパネルとCPUテストがあり、追加のDear ImGui移行対象は特定できませんでした。Graph / Timelineを今後追加する場合の候補は、Diagnosticsの計測履歴とAnimation Debugの時刻表示です。
+Dear ImGuiは[脱ImGui Phase 8](../roadmap/close/RAVEN_IMGUI_PHASE7_VALIDATION.md#phase-8-dear-imgui依存の撤去2026-11-12)で製品から撤去済みです。M7の要件は、EditorとRuntimeのUIをRaven UIで賄い、この撤去状態を維持することです。
+
+既存の依存計測スクリプトで、依存ファイル、API呼び出し、Visual Studio設定の参照、実行時切替を確認し、すべて0件でした。追跡中のファイル名とCI／ビルド設定も確認し、製品に同梱されるDear ImGuiソースや設定参照は見つかりませんでした。移行履歴と監査用スクリプトは検証記録として残しています。
+
+既存Ravenパネルの選択・名前変更・プロパティ編集とUndoはCPU回帰で確認済みです。実機コントローラーおよび実GPUによるRuntime操作の検証は別項目として残ります。
