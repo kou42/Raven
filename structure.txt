@@ -144,6 +144,9 @@ D:.
     |   |   |   |   |   DenseSDF.comp
     |   |   |   |   |   DenseSDF.hlsl
     |   |   |   |   |   DenseSDF.inc
+    |   |   |   |   |   SparseSDF.comp
+    |   |   |   |   |   SparseSDF.hlsl
+    |   |   |   |   |   SparseSDF.inc
     |   |   |   |   |
     |   |   |   |   +---DirectX12
     |   |   |   |   |       BuildSceneMesh.ps1
@@ -719,6 +722,8 @@ D:.
     |   |   |   |       DenseSDF.h
     |   |   |   |       GravityField.h
     |   |   |   |       PhysicsField.h
+    |   |   |   |       SparseSDF.cpp
+    |   |   |   |       SparseSDF.h
     |   |   |   +---Fluid
     |   |   |   |   |   FluidCouplingBinding.h
     |   |   |   |   |   FluidParticle.h

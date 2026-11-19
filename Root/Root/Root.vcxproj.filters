@@ -1272,4 +1272,12 @@
     <None Include="Raven\Assets\Shaders\DenseSDF.inc"><Filter>Raven\Assets\Shaders</Filter></None>
     <ClCompile Include="..\Tests\DenseSDFGPUIntegrationTests.cpp"><Filter>Tests</Filter></ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Update="Raven\Physics\Field\SparseSDF.cpp"><Filter>Raven\Physics\Field</Filter></ClCompile>
+    <ClInclude Update="Raven\Physics\Field\SparseSDF.h"><Filter>Raven\Physics\Field</Filter></ClInclude>
+    <None Include="Raven\Assets\Shaders\SparseSDF.comp"><Filter>Raven\Assets\Shaders</Filter></None>
+    <None Include="Raven\Assets\Shaders\SparseSDF.hlsl"><Filter>Raven\Assets\Shaders</Filter></None>
+    <None Include="Raven\Assets\Shaders\SparseSDF.inc"><Filter>Raven\Assets\Shaders</Filter></None>
+    <ClCompile Include="..\Tests\SparseSDFGPUIntegrationTests.cpp"><Filter>Tests</Filter></ClCompile>
+  </ItemGroup>
 </Project>

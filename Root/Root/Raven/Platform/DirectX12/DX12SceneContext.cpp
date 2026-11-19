@@ -119,6 +119,12 @@ ID3D12GraphicsCommandList* DX12SceneContext::GetComputeCommandList() const
     return m_RecordingCompute ? GetActiveCommandList() : nullptr;
 }
 
+bool DX12SceneContext::GetGraphicsTimestampFrequency(std::uint64_t& frequency) const
+{
+    return m_Shared != nullptr && m_Shared->Queue.IsValid() &&
+        SUCCEEDED(m_Shared->Queue.GetHandle()->GetTimestampFrequency(&frequency)) && frequency != 0;
+}
+
 RHIFrameResult DX12SceneContext::BeginFrame()
 {
     if (m_FatalError == true || m_FrameActive == true || m_CurrentFrame >= m_Frames.size() ||

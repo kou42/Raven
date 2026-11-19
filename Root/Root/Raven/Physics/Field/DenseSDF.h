@@ -25,6 +25,7 @@ public:
     math::Vec3 GetCenter() const;
     float GetRadius() const;
     std::span<const math::Vec3> GetTriangleVertices() const;
+    std::span<const Triangle> GetTriangleIndices() const;
 
 private:
     DenseSDFSource() = default;
@@ -32,6 +33,7 @@ private:
     math::Vec3 m_Center{};
     float m_Radius = 0.0f;
     std::vector<math::Vec3> m_TriangleVertices;
+    std::vector<Triangle> m_TriangleIndices;
 };
 
 struct DenseSDFGrid
