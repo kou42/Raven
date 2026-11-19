@@ -1,7 +1,9 @@
 #include "Raven/Physics/PhysicsSimulationWorld.h"
+#include "Raven/Physics/Coupling/GridThermalCoupling.h"
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 #include "Raven/Physics/SoftBody/SoftBodySolver.h"
 #include "Raven/Physics/Electromagnetism/MagneticField.h"
@@ -455,7 +457,7 @@ void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
     // 7. 最新Rigid ColliderをSoftBody local-spaceへ同期
     // 8. Soft Bodyを進めてCollision ConstraintとReaction Feedbackを確定
     // 9. そのSoft Stepで生成された反作用ImpulseをRigid Bodyへ返す
-    // 10. ECSからThermal Registryを再構築し、同じRigid Stepで得たContact Manifoldを熱接触へ変換
+    // 10. 格子の熱を更新した後、ECSからThermal Registryを再構築し、同じRigid Stepで得たContact Manifoldを熱接触へ変換
     // 11. Thermal Domainの熱伝導を同じFixed Step幅で進める
     //
     // ElectromagneticSystemは位置や速度を直接変更せず、RigidBodyComponent::Forceだけへ書き込みます。
@@ -483,6 +485,11 @@ void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
         CPUProfiler::Get().AddCounter("Physics.Transform.SynchronizationFailures", 1.0);
     }
 
+    if (m_GridThermalCoupling != nullptr)
+    {
+        // Fluidの更新後に格子温度を確定し、同じStepの環境温度評価へ渡す。
+        m_GridThermalCoupling->Step(fixedDeltaTime);
+    }
     ThermalSystem::SynchronizeWorld(scene);
     ThermalSystem::AppendRigidBodyContacts(scene, m_RigidBodyWorld.GetContactManifolds());
     m_ThermalWorld.Step(fixedDeltaTime);
@@ -819,6 +826,19 @@ SoftBodyWorld& PhysicsSimulationWorld::GetSoftBodyWorld()
 const SoftBodyWorld& PhysicsSimulationWorld::GetSoftBodyWorld() const
 {
     return m_SoftBodyWorld;
+}
+
+void PhysicsSimulationWorld::SetGridThermalCoupling(std::shared_ptr<GridThermalCoupling> coupling)
+{
+    // Registry の非所有参照を解除してから、以前の格子の所有権を手放す。
+    auto& registry = m_ThermalWorld.GetTemperatureFieldRegistry();
+    if (m_GridThermalCoupling != nullptr && m_RegisteredGridTemperature)
+    {
+        registry.UnregisterField(m_GridThermalCoupling->GetEnvironmentField());
+    }
+    m_GridThermalCoupling = std::move(coupling);
+    m_RegisteredGridTemperature = m_GridThermalCoupling != nullptr &&
+        registry.RegisterField(m_GridThermalCoupling->GetEnvironmentField());
 }
 
 ThermalWorld& PhysicsSimulationWorld::GetThermalWorld()

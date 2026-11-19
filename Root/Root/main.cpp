@@ -55,6 +55,7 @@
 
 #include "Raven/Diagnostics/Tests/DiagnosticSelfTests.h"
 #include "Raven/Physics/Tests/ElectromagnetismSelfTests.h"
+#include "Raven/Physics/Tests/ThermalWorldSelfTests.h"
 #ifdef _DEBUG
 #include "Raven/Core/Tests/ExplicitSceneFrameSelfTests.h"
 #include "Raven/Core/Jobs/Tests/JobSystemSelfTests.h"
@@ -78,7 +79,6 @@
 #include "Raven/Physics/Tests/PhysicsSimulationWorldSelfTests.h"
 #include "Raven/Physics/Tests/SoftBodyIntegratedStepSelfTests.h"
 #include "Raven/Physics/Tests/StaticMeshTriangleBVHSelfTests.h"
-#include "Raven/Physics/Tests/ThermalWorldSelfTests.h"
 #include "Raven/UI/Svg/Debug/UISvgDemoLayer.h"
 #include "Raven/UI/Text/Debug/UITextDemoLayer.h"
 #endif
@@ -207,7 +207,7 @@ int main(int argc, char* argv[])
 #ifdef _WIN32
         if (backendArgument == "--test-scene-simulation" || backendArgument == "--test-physics-collision" ||
             backendArgument == "--test-fluid-sph"
-            || backendArgument == "--test-electromagnetism" || backendArgument == "--test-explicit-frame" || backendArgument == "--test-softbody-integrated"
+            || backendArgument == "--test-thermal-grid" || backendArgument == "--test-electromagnetism" || backendArgument == "--test-explicit-frame" || backendArgument == "--test-softbody-integrated"
             || backendArgument == "--test-scene-view" || backendArgument == "--measure-scene-view"
             || backendArgument == "--test-scene-runtime" || backendArgument == "--measure-scene-runtime")
         {
@@ -244,6 +244,19 @@ int main(int argc, char* argv[])
         if (backendArgument == "--measure-scene-graph")
         {
             Raven::tests::RunSceneGraphMeasurements();
+            return 0;
+        }
+        if (backendArgument == "--test-thermal-grid")
+        {
+#ifdef _DEBUG
+            Raven::ph::tests::RunThermalWorldSelfTests();
+#endif
+            if (Raven::ph::tests::RunGridThermalSelfTests() == false)
+            {
+                std::cerr << "Thermal grid self-tests failed.\n";
+                return 1;
+            }
+            std::cout << "Thermal self-tests passed.\n";
             return 0;
         }
         if (backendArgument == "--test-electromagnetism")
