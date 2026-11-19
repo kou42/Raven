@@ -4,17 +4,39 @@
 #include <vector>
 
 #include "Raven/Physics/Coupling/FluidStaticColliderCoupling.h"
+#include "Raven/Physics/Collision/StaticSDFCollider.h"
+#include "Raven/Physics/Field/DenseSDF.h"
 #include "Raven/Physics/Fluid/FluidParticle.h"
 #include "Raven/Physics/Fluid/FluidSpatialHashGrid.h"
 #include "Raven/Physics/Fluid/SPHKernel.h"
 #include "Raven/Physics/Fluid/SPHSettings.h"
 #include "Raven/Physics/Fluid/SPHSolver.h"
+#include "Raven/Scene/Scene.h"
 
 namespace Raven::ph::tests
 {
 
 void RunFluidSPHSelfTests()
 {
+    {
+        Scene scene;
+        const auto source = DenseSDFSource::CreateSphere({}, 1.0f);
+        auto obstacle = scene.CreateEntity("SPH signed distance boundary");
+        obstacle.AddComponent<StaticSDFColliderComponent>().Boundary =
+            StaticSDFBoundary::FromAnalytic(CreateRef<DenseSDFSource>(*source), 0.01f);
+        SPHSettings settings{};
+        settings.Gravity = {};
+        SPHSolver solver(settings);
+        std::vector<FluidParticle> particles(1);
+        particles[0].Position = {1.05f, 0, 0};
+        particles[0].Velocity = {-1.0f, 0, 0};
+        solver.Step(particles, 1.0f / 60.0f);
+        FluidStaticColliderCoupling coupling({0.1f, 0.0f});
+        coupling.ResolveScene(scene, particles);
+        assert(coupling.GetLastStatistics().ResolvedContactCount == 1);
+        assert(std::abs(particles[0].Position.x - 1.1f) < 1.0e-5f);
+        assert(std::abs(particles[0].Velocity.x) < 1.0e-5f);
+    }
     {
         const float h = 1.0f;
         assert(SPHKernel::EvaluatePoly6Density(0.0f, h) > 0.0f);

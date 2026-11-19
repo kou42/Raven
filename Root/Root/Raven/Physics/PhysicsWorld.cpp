@@ -1,4 +1,4 @@
-﻿#include "Raven/Diagnostics/Generated/MessageMetadata.generated.h"
+#include "Raven/Diagnostics/Generated/MessageMetadata.generated.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -16,6 +16,7 @@
 #include "Raven/Physics/Collision/Capsule.h"
 #include "Raven/Physics/Collision/CollisionDetection.h"
 #include "Raven/Physics/Collision/OBB.h"
+#include "Raven/Physics/Collision/StaticSDFCollider.h"
 #include "Raven/Physics/Solver/ContactSolver.h"
 
 namespace Raven
@@ -645,6 +646,37 @@ void PhysicsWorld::DetectCollisions(Scene& scene)
         profiler.AddCounter("Physics.Collision.PlaneCount", static_cast<double>(planes.size()));
         profiler.AddCounter("Physics.Collision.PlanePairTests", static_cast<double>(planePairTests));
         Diagnostics::RecordCounter("Physics.Collision.PlanePairTests", static_cast<double>(planePairTests), Diagnostics::DiagnosticCategory::Physics);
+    }
+
+    // SDFはworld-spaceの静的Fieldです。SphereのOffsetは従来と同じworld軸契約を用います。
+    for (auto [boundaryEntity, boundaryTransform, boundary]
+        : scene.View<TransformComponent, StaticSDFColliderComponent>())
+    {
+        const auto* boundaryBody = scene.TryGetComponent<RigidBodyComponent>(boundaryEntity.GetIndex());
+        if (boundary.Boundary == nullptr || (boundaryBody != nullptr && boundaryBody->Type != BodyType::Static))
+        {
+            continue;
+        }
+        for (auto [sphereEntity, transform, collider, body]
+            : scene.View<TransformComponent, ColliderComponent, RigidBodyComponent>())
+        {
+            if (sphereEntity == boundaryEntity || collider.Type != ColliderType::Sphere ||
+                body.Type != BodyType::Dynamic || collider.Radius <= 0.0f)
+            {
+                continue;
+            }
+            SDFSphereContact contact{};
+            if (GenerateSDFSphereContact(*boundary.Boundary, transform.Position + collider.Offset, collider.Radius, contact))
+            {
+                // ContactSolverの法線規約はSphere Aから境界 Bへ向く方向です。
+                m_Manifolds.push_back(MakeContactManifold({sphereEntity, boundaryEntity,
+                    contact.SurfacePosition, -contact.OutwardNormal, contact.Penetration,
+                    std::min(std::max(collider.Restitution, 0.0f), std::max(boundary.Restitution, 0.0f)),
+                    std::sqrt(std::max(collider.StaticFriction, 0.0f) * std::max(boundary.StaticFriction, 0.0f)),
+                    std::sqrt(std::max(collider.DynamicFriction, 0.0f) * std::max(boundary.DynamicFriction, 0.0f)),
+                    collider.IsTrigger}));
+            }
+        }
     }
 
     RestorePersistentContacts(scene);

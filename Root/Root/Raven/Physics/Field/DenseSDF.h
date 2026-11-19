@@ -56,7 +56,10 @@ public:
     bool Prepare(RHIComputeCommandEncoder& encoder, RHIComputePipelineSpecification shader,
         const DenseSDFSource& source, const DenseSDFGrid& grid);
     Ref<RHIComputeReadback> Record(RHIComputeCommandEncoder& encoder) const;
+    bool RecordTexture(RHIComputeCommandEncoder& encoder) const;
     const Ref<RHIComputeResource>& GetTexture() const;
+    const DenseSDFGrid& GetGrid() const;
+    bool IsSigned() const;
 
 private:
     Ref<RHIComputePipeline> m_Pipeline;
@@ -65,6 +68,8 @@ private:
     Ref<RHIComputeResource> m_Texture;
     RHIComputeExtent m_Groups{};
     std::size_t m_Bytes = 0;
+    DenseSDFGrid m_Grid;
+    bool m_Signed = false;
 };
 
 } // namespace Raven::ph

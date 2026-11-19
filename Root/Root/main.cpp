@@ -8,6 +8,7 @@
 #include <iostream>
 #include <cstdlib>
 #include "Raven/Renderer/RHI/ClearBackendDemo.h"
+#include "Raven/Physics/Fluid/Debug/RunGPUGridFluidDemo.h"
 #include "Raven/Platform/Vulkan/RunVulkanSceneRuntimeDemo.h"
 #include "Raven/Platform/DirectX12/RunDX12SceneRuntimeDemo.h"
 #include "Raven/Platform/Vulkan/RunVulkanSceneTriangleDemo.h"
@@ -82,6 +83,8 @@
 #include "Raven/UI/Text/Debug/UITextDemoLayer.h"
 #endif
 
+namespace Raven::ph::tests { void RunFluidSPHSelfTests(); }
+
 int main(int argc, char* argv[])
 {
     Raven::RHIBackend applicationBackend = Raven::RHIBackend::OpenGL;
@@ -104,6 +107,10 @@ int main(int argc, char* argv[])
     for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex)
     {
         const std::string backendArgument = argv[argumentIndex];
+        if (backendArgument == "--gpu-sdf-fluid-demo" || backendArgument == "--test-gpu-sdf-fluid")
+        {
+            return Raven::ph::RunGPUGridFluidDemo(backendArgument == "--test-gpu-sdf-fluid");
+        }
         if (backendArgument.starts_with("--diagnostics-disable="))
         {
             std::string_view names = std::string_view(backendArgument).substr(std::string_view("--diagnostics-disable=").size());
@@ -198,7 +205,8 @@ int main(int argc, char* argv[])
             }
         }
 #ifdef _WIN32
-        if (backendArgument == "--test-scene-simulation" || backendArgument == "--test-physics-collision"
+        if (backendArgument == "--test-scene-simulation" || backendArgument == "--test-physics-collision" ||
+            backendArgument == "--test-fluid-sph"
             || backendArgument == "--test-explicit-frame" || backendArgument == "--test-softbody-integrated"
             || backendArgument == "--test-scene-view" || backendArgument == "--measure-scene-view"
             || backendArgument == "--test-scene-runtime" || backendArgument == "--measure-scene-runtime")
@@ -268,6 +276,12 @@ int main(int argc, char* argv[])
         {
             Raven::tests::RunScenePhysicsCollisionSelfTests();
             std::cout << "Physics collision self-tests passed.\n";
+            return 0;
+        }
+        if (backendArgument == "--test-fluid-sph")
+        {
+            Raven::ph::tests::RunFluidSPHSelfTests();
+            std::cout << "Fluid SPH self-tests passed.\n";
             return 0;
         }
         if (backendArgument == "--test-scene-graph")

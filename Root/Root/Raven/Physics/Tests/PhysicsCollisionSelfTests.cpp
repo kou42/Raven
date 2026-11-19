@@ -8,6 +8,8 @@
 #include "Raven/Physics/Collision/CollisionDetection.h"
 #include "Raven/Physics/Collision/DynamicAABBTreeValidation.h"
 #include "Raven/Physics/Collision/OBB.h"
+#include "Raven/Physics/Collision/StaticSDFCollider.h"
+#include "Raven/Physics/Field/DenseSDF.h"
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Physics/RigidBodyDynamics.h"
 #include "Raven/Physics/Solver/ContactSolver.h"
@@ -736,6 +738,29 @@ void RunPlaneCollectionSelfTests()
 
 void RunPhysicsCollisionSelfTests()
 {
+    {
+        Scene scene;
+        PhysicsWorld world;
+        world.SetGravity({});
+        const auto source = DenseSDFSource::CreateSphere({}, 1.0f);
+        const auto field = StaticSDFBoundary::FromAnalytic(CreateRef<DenseSDFSource>(*source), 0.01f);
+        Entity boundary = scene.CreateEntity("Static SDF");
+        boundary.AddComponent<StaticSDFColliderComponent>().Boundary = field;
+        Entity sphere = scene.CreateEntity("Dynamic sphere");
+        sphere.GetComponent<TransformComponent>().Position = {1.12f, 0, 0};
+        auto& collider = sphere.AddComponent<ColliderComponent>();
+        collider.Type = ColliderType::Sphere;
+        collider.Radius = 0.20f;
+        auto& body = sphere.AddComponent<RigidBodyComponent>();
+        body.SetBodyType(BodyType::Dynamic);
+        body.LinearVelocity = {-1, 0, 0};
+        world.Step(scene, 1.0f / 60.0f);
+        const auto& contacts = world.GetContactManifolds();
+        assert(contacts.size() == 1 && contacts[0].A == sphere && contacts[0].B == boundary);
+        assert(contacts[0].Normal.x < -0.999f && body.LinearVelocity.x >= -1.0e-4f);
+        SDFSphereContact undefined{};
+        assert(GenerateSDFSphereContact(*field, {}, collider.Radius, undefined) == false);
+    }
     RunPlaneCollectionSelfTests();
     // Collisionまわりの回帰テストを一括実行します。
     RunDynamicAABBTreeSelfTests();

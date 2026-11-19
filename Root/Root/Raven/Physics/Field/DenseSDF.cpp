@@ -273,6 +273,8 @@ bool DenseSDFGenerator::Prepare(RHIComputeCommandEncoder& encoder, RHIComputePip
     m_Input = std::move(parameters);
     m_Distances = std::move(distances);
     m_Texture = std::move(texture);
+    m_Grid = grid;
+    m_Signed = source.GetMode() != DenseSDFSource::Mode::UnsignedMesh;
     m_Bytes = voxels * sizeof(float);
     for (std::size_t axis = 0; axis < m_Groups.size(); ++axis)
     {
@@ -283,17 +285,22 @@ bool DenseSDFGenerator::Prepare(RHIComputeCommandEncoder& encoder, RHIComputePip
 
 Ref<RHIComputeReadback> DenseSDFGenerator::Record(RHIComputeCommandEncoder& encoder) const
 {
-    const RHIComputeBinding bindings[] = {{0, m_Input}, {1, m_Distances}, {2, m_Texture}};
-    if (m_Pipeline == nullptr || encoder.Barrier(RHIComputeConsumer::Storage) == false ||
-        encoder.Dispatch(m_Pipeline, bindings, m_Groups) == false ||
-        encoder.Barrier(RHIComputeConsumer::TextureSampling) == false ||
-        encoder.Barrier(RHIComputeConsumer::BufferReadback) == false)
+    if (RecordTexture(encoder) == false || encoder.Barrier(RHIComputeConsumer::BufferReadback) == false)
     {
         return nullptr;
     }
     return encoder.RequestBufferReadback(m_Distances, 0, m_Bytes);
 }
 
+bool DenseSDFGenerator::RecordTexture(RHIComputeCommandEncoder& encoder) const
+{
+    const RHIComputeBinding bindings[] = {{0, m_Input}, {1, m_Distances}, {2, m_Texture}};
+    return m_Pipeline != nullptr && encoder.Barrier(RHIComputeConsumer::Storage) &&
+        encoder.Dispatch(m_Pipeline, bindings, m_Groups) && encoder.Barrier(RHIComputeConsumer::TextureSampling);
+}
+
 const Ref<RHIComputeResource>& DenseSDFGenerator::GetTexture() const { return m_Texture; }
+const DenseSDFGrid& DenseSDFGenerator::GetGrid() const { return m_Grid; }
+bool DenseSDFGenerator::IsSigned() const { return m_Signed; }
 
 } // namespace Raven::ph

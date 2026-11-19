@@ -490,4 +490,10 @@ std::uint32_t GetOpenGLComputeTextureID(const Ref<RHIComputeResource>& resource)
     return native != nullptr && native->Type == RHIComputeBindingType::StorageImage3D ? native->Name : 0;
 }
 
+std::uint32_t GetOpenGLComputeBufferID(const Ref<RHIComputeResource>& resource)
+{
+    const auto native = std::dynamic_pointer_cast<OpenGLResource>(resource);
+    return native != nullptr && native->Type == RHIComputeBindingType::StorageBuffer ? native->Name : 0;
+}
+
 } // namespace Raven

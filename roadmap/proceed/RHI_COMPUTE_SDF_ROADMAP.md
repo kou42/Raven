@@ -4,7 +4,7 @@
 
 対象: `kou42/Raven` / `master`
 
-状態: **Phase 00〜05 の 3 Backend Compute / Dense SDF を確認済み。Phase 06 の Narrow-Band / Sparse SDF を実装・検証済み**
+状態: **Phase 00〜06 の Compute / Dense・Sparse SDF を確認済み。Phase 07 の Physics / Fluid / Particle 連携を実装・検証済み**
 
 ## 1. 目的とスコープ
 
@@ -391,14 +391,26 @@ foreach ($name in @('DenseSDF', 'SparseSDF')) {
 
 ### Phase 07 — Physics / Fluid / Particle 連携
 
-- [ ] SDF を静的境界として使う Collision / Contact を追加（既存 Sphere / Box を維持）。
-- [ ] `FluidWorld` と既存 CPU SPH を維持し、SDF 境界連携を追加。
-- [ ] GPU Grid Fluid は別 Solver / Participant として導入。
-- [ ] GPU 粒子と速度場のサンプリング・衝突を追加。
-- [ ] CPU `std::vector<FluidParticle>` 前提の Coupling と GPU 状態を暗黙に混在させない。
-- [ ] 同期タイミング、固定 Step、決定性、GPU Readback 頻度を検証。
+- [x] SDF を静的境界として使う Collision / Contact を追加（既存 Sphere / Box を維持）。
+- [x] `FluidWorld` と既存 CPU SPH を維持し、SDF 境界連携を追加。
+- [x] GPU Grid Fluid は別 Solver / Participant として導入。
+- [x] GPU 粒子と速度場のサンプリング・衝突を追加。
+- [x] CPU `std::vector<FluidParticle>` 前提の Coupling と GPU 状態を暗黙に混在させない。
+- [x] 同期タイミング、固定 Step、決定性、GPU Readback 頻度を検証。
 
 **完了条件**: 既存 CPU Fluid の回帰がなく、GPU SDF 境界を用いた新規デモが動く。
+
+#### Phase 07 実装・検証記録（2026-11-20）
+
+- `StaticSDFColliderComponent` は world-space の符号付き CPU Field または公開済み Sparse スナップショットを所有する。球形剛体は距離と法線から既存 `ContactManifold` を作り、CPU SPH は同じ球・SDF 接触を既存 Static Collider Coupling で使う。帯域外・欠損・法線不能は接触照会失敗。剛体側の初期対応は離散ステップの動的 Sphere。
+- `GPUGridFluid` は独立した `FluidSimulationParticipant`。速度場を半ラグランジュ移流・拡散・外力で更新し、粒子は更新後の速度場を三線形サンプリングする。初期実装は圧力射影なし。粒子状態と速度場は GPU Buffer に保持され、CPU SPH の Coupling Binding には登録しない。
+- GPU は同じ Dense SDF Texture を接触と描画に利用する。GPU 粒子は 1 サブステップあたり最小セル間隔の 1/4、最大 32 回に移動を制限して接触を調べる。法線・補正が成立しない場合は位置を保持し、診断フラグを残す。薄い形状が Grid に記録されることが前提で、連続形状への一般的な CCD は別課題。
+- フレームでは固定ステップの速度更新 → Barrier → 粒子更新 → Barrier → 描画の順に実行する。Dense SDF の生成と通常描画は GPU 上で完結する。数値テストが診断位置を要求した場合にだけ、粒子 Readback のチケットを作る。
+- RTX 3080 の OpenGL 4.3 で、45 粒子を 1/60 秒で 90 ステップ進める試行を 2 回実行し、同一 GPU で結果がビット単位で一致した。各試行の接触は 2,061 回、最終時点の解析球に対する最大貫通は `0.002398 m`（基準 `0.012 m`）。ステップ中の Readback は 0 回、診断時は試行ごとに 1 回。異なる GPU や Backend 間での決定性は未検証。
+- 高速粒子は 1 ステップの移動を 0.80 m に制限し、厚さ 0.06 m の壁に接触した時点で壁の手前（X=-0.045 m）に停止した。球中心の法線が未定義のケースでは、位置を維持し診断フラグを確認した。専用ウィンドウで SDF 断面と粒子の描画、正常終了を目視確認した。
+- Debug / Release x64 と Debug GPU 統合テストをビルドし、Debug / Release の OpenGL Fluid 統合テスト、CPU Collision / SPH / Scene Simulation / Explicit Frame が成功。3 Backend の Dense / Sparse SDF 回帰で、公開済み符号付き Sparse からの CPU 接触、帯域外での照会失敗、符号なしスナップショットの拒否を確認した。DX12 / Vulkan の Validation error は 0 件。GLFW 補完と既存 PDB 回避設定を用いた。
+
+`Root/Root` から `../x64/Debug/Root.exe --gpu-sdf-fluid-demo` を実行すると、OpenGL 4.3 の専用ウィンドウで球の SDF 断面と粒子を描画する。Esc で終了する。統合テスト入口は `--test-gpu-sdf-fluid`、CPU 回帰入口は `--test-physics-collision` と `--test-fluid-sph`。
 
 ### Phase 08 — Electromagnetism Field / Solver 連携
 

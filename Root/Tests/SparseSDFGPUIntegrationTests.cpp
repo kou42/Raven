@@ -1,4 +1,5 @@
 #include "Raven/Physics/Field/SparseSDF.h"
+#include "Raven/Physics/Collision/StaticSDFCollider.h"
 #include "Raven/Platform/DirectX12/DX12SceneContext.h"
 #include "Raven/Platform/Vulkan/VulkanSceneContext.h"
 #include "Raven/Renderer/RHI/RHIDevice.h"
@@ -401,6 +402,19 @@ bool Measure(RHIComputeCommandEncoder& encoder, RHISceneFrameLifecycle* frame, G
         return false;
     }
     const auto snapshot = sparse.GetSnapshot();
+    if (source.GetMode() == DenseSDFSource::Mode::Sphere)
+    {
+        const auto boundary = StaticSDFBoundary::FromSnapshot(snapshot, 0.025f);
+        SDFSphereContact contact{};
+        const auto center = source.GetCenter() + Vec3{source.GetRadius() + 0.015f, 0, 0};
+        if (Check(boundary != nullptr && GenerateSDFSphereContact(*boundary, center, 0.04f, contact) &&
+            contact.OutwardNormal.x > 0.99f && contact.Penetration > 0.0f &&
+            GenerateSDFSphereContact(*boundary, source.GetCenter(), 0.04f, contact) == false,
+            "CPU contact with published signed Sparse SDF and missing band samples") == false)
+        {
+            return false;
+        }
+    }
     const auto denseBytes = dense.size() * sizeof(float);
     std::cout << backend << ' ' << name << " denseBytes=" << denseBytes
         << " sparseBytes=" << snapshot->GetPayloadBytes() << " sparsePeakGpuPayload=" << metrics.PeakGpuPayload
@@ -439,6 +453,12 @@ bool VerifyIncremental(RHIComputeCommandEncoder& encoder, RHISceneFrameLifecycle
         return false;
     }
     const auto editedSnapshot = incremental.GetSnapshot();
+    if (mode == DenseSDFSource::Mode::UnsignedMesh &&
+        Check(StaticSDFBoundary::FromSnapshot(editedSnapshot, 0.025f) == nullptr,
+            "unsigned Sparse SDF cannot be registered as a signed boundary") == false)
+    {
+        return false;
+    }
     const auto rebuiltSnapshot = fresh.GetSnapshot();
     if (Check(edited.Batches > 1 && editedSnapshot->GetGeneration() == original->GetGeneration() + 1 &&
         editedSnapshot->GetTileCount() == rebuiltSnapshot->GetTileCount(), "multiframe generation and tile removal") == false)
