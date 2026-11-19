@@ -32,4 +32,19 @@ void RHIExplicitComputeFrame::OnCompletion(std::function<void(bool)> completion)
     m_Completions.push_back(std::move(completion));
 }
 
+void RHICompletedComputeTimestamp::Complete(bool success, double nanoseconds) noexcept
+{
+    m_Status = success ? RHIComputeReadbackStatus::Ready : RHIComputeReadbackStatus::Failed;
+    m_Nanoseconds = nanoseconds;
+}
+
+RHIComputeReadbackStatus RHICompletedComputeTimestamp::Poll(double& nanoseconds)
+{
+    if (m_Status == RHIComputeReadbackStatus::Ready)
+    {
+        nanoseconds = m_Nanoseconds;
+    }
+    return m_Status;
+}
+
 } // namespace Raven

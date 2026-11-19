@@ -29,6 +29,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -1055,25 +1056,35 @@ bool RunExplicitComputeSmoke(Raven::RHIDevice& device, const ComputeSmokeDraw& d
         return scenes.FlushPendingSceneChange() && scenes.GetActiveSceneID() != previous;
     };
     auto ticket = CreateRef<Ref<RHIComputeReadback>>();
-    const auto record = [pipeline, buffer, volume, secondVolume, ticket](auto& commands)
+    auto timestamp = CreateRef<Ref<RHIComputeTimestamp>>();
+    auto requested = CreateRef<std::chrono::steady_clock::time_point>();
+    const auto record = [pipeline, buffer, volume, secondVolume, ticket, timestamp, requested](auto& commands)
     {
-        const RHIComputeBinding bindings[] = {{0, buffer}, {1, volume}};
-        // 最初のDispatchで書いたImageを後で描画するため、Barrierが直前のBindingだけに
-        // 限定されていると、このテストのGraphics Samplingが失敗します。
-        const RHIComputeBinding nextBindings[] = {{0, buffer}, {1, secondVolume}};
-        if (commands.Dispatch(pipeline, bindings, {0, 1, 1}) ||
-            commands.Dispatch(pipeline, bindings, {3, 1, 1}) == false ||
-            commands.Barrier(RHIComputeConsumer::Storage) == false ||
-            commands.Dispatch(pipeline, nextBindings, {3, 1, 1}) == false ||
-            commands.Barrier(RHIComputeConsumer::TextureSampling) == false ||
-            commands.Barrier(RHIComputeConsumer::BufferReadback) == false)
+        return commands.MeasureGpuWork([&](RHIComputeCommandEncoder& measured)
         {
-            return false;
-        }
-        *ticket = commands.RequestBufferReadback(buffer, 0, 19 * sizeof(uint32_t));
-        std::vector<std::byte> pending;
-        return *ticket != nullptr && (*ticket)->Poll(pending) == RHIComputeReadbackStatus::Pending && pending.empty();
+            const RHIComputeBinding bindings[] = {{0, buffer}, {1, volume}};
+            // 同じ Binding を連続して使う場合に Descriptor を共有できることを検証する。
+            // 最初の Image も後で描画するため、Barrier は直前の Binding 以外にも必要。
+            const RHIComputeBinding nextBindings[] = {{0, buffer}, {1, secondVolume}};
+            if (measured.Dispatch(pipeline, bindings, {0, 1, 1}) ||
+                measured.Dispatch(pipeline, bindings, {3, 1, 1}) == false ||
+                measured.Barrier(RHIComputeConsumer::Storage) == false ||
+                measured.Dispatch(pipeline, bindings, {3, 1, 1}) == false ||
+                measured.Barrier(RHIComputeConsumer::Storage) == false ||
+                measured.Dispatch(pipeline, nextBindings, {3, 1, 1}) == false ||
+                measured.Barrier(RHIComputeConsumer::TextureSampling) == false ||
+                measured.Barrier(RHIComputeConsumer::BufferReadback) == false)
+            {
+                return false;
+            }
+            *requested = std::chrono::steady_clock::now();
+            *ticket = measured.RequestBufferReadback(buffer, 0, 19 * sizeof(uint32_t));
+            std::vector<std::byte> pending;
+            return *ticket != nullptr && (*ticket)->Poll(pending) == RHIComputeReadbackStatus::Pending && pending.empty();
+        }, *timestamp);
     };
+    double totalNanoseconds = 0.0;
+    double totalReadbackUs = 0.0;
     for (int frame = 0; frame < 2; ++frame)
     {
         if (encoder->QueueFrame(record) == false || draw(volume, switchScene) == false)
@@ -1086,9 +1097,18 @@ bool RunExplicitComputeSmoke(Raven::RHIDevice& device, const ComputeSmokeDraw& d
         {
             return false;
         }
+        double frameTime = 0.0;
+        if (Check(*timestamp != nullptr && (*timestamp)->Poll(frameTime) == RHIComputeReadbackStatus::Ready,
+            "Frame-complete GPU timestamp") == false)
+        {
+            return false;
+        }
+        totalNanoseconds += frameTime;
+        totalReadbackUs += std::chrono::duration<double, std::micro>(
+            std::chrono::steady_clock::now() - *requested).count();
         for (uint32_t& value : expected)
         {
-            value = (value * 3u + 7u) * 3u + 7u;
+            value = ((value * 3u + 7u) * 3u + 7u) * 3u + 7u;
         }
         if (Check(std::memcmp(bytes.data(), expected.data(), sizeof(expected)) == 0,
             "CPU reference array equality") == false)
@@ -1096,7 +1116,14 @@ bool RunExplicitComputeSmoke(Raven::RHIDevice& device, const ComputeSmokeDraw& d
             return false;
         }
     }
-    return true;
+    const auto stats = encoder->GetStatistics();
+    std::cout << (dx12 ? "dx12" : "vulkan") << " compute gpuUs=" << totalNanoseconds / 1000.0
+        << " readbackUs=" << totalReadbackUs << " dispatches=" << stats.Dispatches << " descriptorAllocations=" << stats.DescriptorAllocations
+        << " descriptorReuses=" << stats.DescriptorReuses << " bufferBytes=" << stats.BufferBytes
+        << " imageBytes=" << stats.ImageBytes << " readbackBytes=" << stats.ReadbackBytes << '\n';
+    return Check(stats.Dispatches == 6 && stats.DescriptorAllocations == 4 && stats.DescriptorReuses == 2 &&
+        stats.Pipelines == 1 && stats.Buffers == 1 && stats.Images == 2 && stats.Readbacks == 2,
+        "Compute resource and descriptor counters");
 }
 
 bool TestVulkanComputeSmoke()

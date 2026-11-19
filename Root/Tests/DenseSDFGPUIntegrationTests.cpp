@@ -282,9 +282,9 @@ bool RunCases(RHIDevice& device, const char* backend, RHISceneFrameLifecycle* fr
     {
         return false;
     }
+    auto generator = CreateRef<DenseSDFGenerator>();
     for (const auto& test : cases)
     {
-        auto generator = CreateRef<DenseSDFGenerator>();
         if (Check(generator->Prepare(*encoder, shader, test.Source, test.Grid), "prepare Dense SDF") == false)
         {
             return false;
@@ -328,7 +328,11 @@ bool RunCases(RHIDevice& device, const char* backend, RHISceneFrameLifecycle* fr
             return false;
         }
     }
-    return true;
+    const auto stats = encoder->GetStatistics();
+    std::cout << backend << " dense count=" << stats.Dispatches << " pipelineAllocations=" << stats.Pipelines
+        << " bufferBytes=" << stats.BufferBytes << " imageBytes=" << stats.ImageBytes << '\n';
+    return Check(stats.Pipelines == 1 && stats.Dispatches == cases.size() && stats.Images == cases.size(),
+        "share immutable Dense SDF pipeline across cases");
 }
 } // namespace
 

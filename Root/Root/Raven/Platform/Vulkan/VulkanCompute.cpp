@@ -77,6 +77,16 @@ struct DispatchResources
     }
 };
 
+struct TimestampPool
+{
+    Ref<VulkanInstance> Instance;
+    VkQueryPool Handle = VK_NULL_HANDLE;
+    ~TimestampPool()
+    {
+        vkDestroyQueryPool(Instance->GetDevice().GetHandle(), Handle, nullptr);
+    }
+};
+
 struct Readback final : RHIComputeReadback
 {
     Ref<Buffer> Staging;
@@ -257,6 +267,59 @@ public:
     {
     }
 
+    bool MeasureGpuWork(const FrameRecorder& work, Ref<RHIComputeTimestamp>& timestamp) override
+    {
+        timestamp.reset();
+        const auto commands = GetCommands();
+        if (commands == VK_NULL_HANDLE)
+        {
+            return work(*this);
+        }
+        const auto& device = m_Instance->GetDevice();
+        const auto physical = device.GetPhysicalDeviceHandle();
+        const auto family = device.GetGraphicsQueueFamilyIndex();
+        std::uint32_t count = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, nullptr);
+        std::vector<VkQueueFamilyProperties> queues(count);
+        vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, queues.data());
+        if (family >= count || queues[family].timestampValidBits == 0)
+        {
+            return work(*this);
+        }
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(physical, &properties);
+        const auto bits = queues[family].timestampValidBits;
+        const auto mask = bits >= 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << bits) - 1;
+        auto pool = CreateRef<TimestampPool>();
+        pool->Instance = m_Instance;
+        VkQueryPoolCreateInfo info{ VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
+        info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        info.queryCount = 2;
+        if (vkCreateQueryPool(Device(), &info, nullptr, &pool->Handle) != VK_SUCCESS)
+        {
+            return work(*this);
+        }
+        const auto result = CreateRef<RHICompletedComputeTimestamp>();
+        const double period = properties.limits.timestampPeriod;
+        // Fence 観測後に Query を回収する。WAIT flag は使わない。
+        m_ActiveFrame->OnCompletion([pool, result, period, mask](bool completed) noexcept
+        {
+            std::uint64_t ticks[2]{};
+            const bool available = completed && vkGetQueryPoolResults(pool->Instance->GetDevice().GetHandle(),
+                pool->Handle, 0, 2, sizeof(ticks), ticks, sizeof(ticks[0]), VK_QUERY_RESULT_64_BIT) == VK_SUCCESS;
+            result->Complete(available, static_cast<double>((ticks[1] - ticks[0]) & mask) * period);
+        });
+        vkCmdResetQueryPool(commands, pool->Handle, 0, 2);
+        vkCmdWriteTimestamp(commands, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, pool->Handle, 0);
+        const bool success = work(*this);
+        vkCmdWriteTimestamp(commands, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, pool->Handle, 1);
+        if (success)
+        {
+            timestamp = result;
+        }
+        return success;
+    }
+
     bool QueueFrame(FrameRecorder recorder) override
     {
         if (recorder == nullptr || IsValid() == false)
@@ -330,7 +393,12 @@ public:
         native.stage.pName = spec.VulkanEntryPoint.c_str();
         const auto result = vkCreateComputePipelines(Device(), VK_NULL_HANDLE, 1, &native, nullptr, &pipeline->Handle);
         vkDestroyShaderModule(Device(), module, nullptr);
-        return result == VK_SUCCESS ? pipeline : nullptr;
+        if (result != VK_SUCCESS)
+        {
+            return nullptr;
+        }
+        ++m_Statistics.Pipelines;
+        return pipeline;
     }
 
     Ref<RHIComputeResource> CreateStorageBuffer(std::size_t size, const void* initialData) override
@@ -359,6 +427,8 @@ public:
             std::memcpy(mapped, initialData, size);
             vkUnmapMemory(Device(), resource->Storage->Memory);
         }
+        ++m_Statistics.Buffers;
+        m_Statistics.BufferBytes += size;
         return resource;
     }
 
@@ -400,7 +470,13 @@ public:
         view.viewType = VK_IMAGE_VIEW_TYPE_3D;
         view.format = info.format;
         view.subresourceRange = VolumeRange;
-        return vkCreateImageView(Device(), &view, nullptr, &resource->View) == VK_SUCCESS ? resource : nullptr;
+        if (vkCreateImageView(Device(), &view, nullptr, &resource->View) != VK_SUCCESS)
+        {
+            return nullptr;
+        }
+        ++m_Statistics.Images;
+        m_Statistics.ImageBytes += static_cast<std::uint64_t>(size[0]) * size[1] * size[2] * sizeof(float);
+        return resource;
     }
 
     bool Dispatch(const Ref<RHIComputePipeline>& pipeline, std::span<const RHIComputeBinding> bindings,
@@ -432,9 +508,24 @@ public:
             }
             work->Resources.push_back(std::move(resource));
         }
-        if (work->Resources.empty() == false && PrepareDescriptors(*work) == false)
+        if (work->Resources.empty() == false)
         {
-            return false;
+            const auto cached = m_LastDescriptors.lock();
+            if (cached != nullptr && cached->Shader == native && cached->Resources == work->Resources)
+            {
+                // Set を更新せず、同一 Pipeline と Resource の組だけを共有する。
+                work = cached;
+                ++m_Statistics.DescriptorReuses;
+            }
+            else
+            {
+                if (PrepareDescriptors(*work) == false)
+                {
+                    return false;
+                }
+                m_LastDescriptors = work;
+                ++m_Statistics.DescriptorAllocations;
+            }
         }
         m_ActiveFrame->Retain(work);
         for (const auto& resource : work->Resources)
@@ -455,6 +546,7 @@ public:
                 0, 1, &work->Set, 0, nullptr);
         }
         vkCmdDispatch(commands, groups[0], groups[1], groups[2]);
+        ++m_Statistics.Dispatches;
         return true;
     }
 
@@ -528,6 +620,8 @@ public:
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
         vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+        ++m_Statistics.Readbacks;
+        m_Statistics.ReadbackBytes += size;
         return ticket;
     }
 
@@ -599,6 +693,7 @@ private:
         return true;
     }
 
+    std::weak_ptr<DispatchResources> m_LastDescriptors;
     VulkanSceneContext& m_Context;
     Ref<VulkanInstance> m_Instance;
     RHIComputeCapabilities m_Caps;

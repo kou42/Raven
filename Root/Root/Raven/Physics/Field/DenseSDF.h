@@ -63,6 +63,8 @@ public:
 
 private:
     Ref<RHIComputePipeline> m_Pipeline;
+    std::weak_ptr<const std::byte> m_EncoderIdentity;
+    RHIComputePipelineSpecification m_Shader;
     Ref<RHIComputeResource> m_Input;
     Ref<RHIComputeResource> m_Distances;
     Ref<RHIComputeResource> m_Texture;

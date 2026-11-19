@@ -37,6 +37,7 @@ struct RHIComputeBindingLayout
     std::uint32_t Slot = 0;
     RHIComputeBindingType Type = RHIComputeBindingType::StorageBuffer;
     RHIComputeAccess Access = RHIComputeAccess::Read;
+    bool operator==(const RHIComputeBindingLayout&) const = default;
 };
 
 struct RHIComputePipelineSpecification
@@ -47,6 +48,7 @@ struct RHIComputePipelineSpecification
     std::vector<std::byte> DirectX12Bytecode;
     std::vector<std::uint32_t> VulkanSpirv;
     std::string VulkanEntryPoint = "main";
+    bool operator==(const RHIComputePipelineSpecification&) const = default;
 };
 
 class RHIComputePipeline
@@ -65,6 +67,29 @@ struct RHIComputeBinding
 {
     std::uint32_t Slot = 0;
     Ref<RHIComputeResource> Resource;
+};
+
+class RHIComputeTimestamp
+{
+public:
+    virtual ~RHIComputeTimestamp() = default;
+    // GPU 完了を待機せず、Ready の場合だけ ns を返す。
+    virtual RHIComputeReadbackStatus Poll(double& nanoseconds) = 0;
+};
+
+// 成功した操作の累積。Bytes は論理ペイロードで、ドライバの配置・常駐量とは異なる。
+struct RHIComputeStatistics
+{
+    std::uint64_t Dispatches = 0;
+    std::uint64_t Pipelines = 0;
+    std::uint64_t Buffers = 0;
+    std::uint64_t BufferBytes = 0;
+    std::uint64_t Images = 0;
+    std::uint64_t ImageBytes = 0;
+    std::uint64_t Readbacks = 0;
+    std::uint64_t ReadbackBytes = 0;
+    std::uint64_t DescriptorAllocations = 0;
+    std::uint64_t DescriptorReuses = 0;
 };
 
 class RHIComputeReadback
@@ -88,6 +113,9 @@ public:
 class RHIComputeCommandEncoder
 {
 public:
+    RHIComputeCommandEncoder() = default;
+    RHIComputeCommandEncoder(const RHIComputeCommandEncoder&) = delete;
+    RHIComputeCommandEncoder& operator=(const RHIComputeCommandEncoder&) = delete;
     virtual ~RHIComputeCommandEncoder() = default;
     // OpenGLの初期実装では同じContext上で操作し、Context破棄前に全ハンドルを解放します。
     // Dispatch/Barrier/ReadbackはGraphics Passの外で呼び出してください。
@@ -104,6 +132,17 @@ public:
     // CaptureしたリソースはContextが完了を観測するまで保持されます。
     using FrameRecorder = std::function<bool(RHIComputeCommandEncoder&)>;
     virtual bool QueueFrame(FrameRecorder recorder) { (void)recorder; return false; }
+    // work は同期的に一度記録される。タイムスタンプ非対応時も work を実行する。
+    virtual bool MeasureGpuWork(const FrameRecorder& work, Ref<RHIComputeTimestamp>& timestamp)
+    { timestamp.reset(); return work(*this); }
+    RHIComputeStatistics GetStatistics() const { return m_Statistics; }
+    std::weak_ptr<const std::byte> GetIdentity() const { return m_Identity; }
+
+private:
+    const Ref<const std::byte> m_Identity = CreateRef<const std::byte>();
+
+protected:
+    RHIComputeStatistics m_Statistics;
 };
 
 } // namespace Raven

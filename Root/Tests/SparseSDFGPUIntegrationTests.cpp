@@ -1,10 +1,7 @@
 #include "Raven/Physics/Field/SparseSDF.h"
 #include "Raven/Physics/Collision/StaticSDFCollider.h"
-#include "Raven/Platform/DirectX12/DX12SceneContext.h"
-#include "Raven/Platform/Vulkan/VulkanSceneContext.h"
 #include "Raven/Renderer/RHI/RHIDevice.h"
-
-#include <glad/glad.h>
+#include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 
 #include <algorithm>
 #include <chrono>
@@ -20,7 +17,6 @@ namespace
 using namespace Raven;
 using namespace Raven::ph;
 using math::Vec3;
-using Microsoft::WRL::ComPtr;
 constexpr float Band = 0.13f;
 constexpr float Tolerance = 1.0e-4f;
 const DenseSDFGrid Grid{{-3.2f, -3.0f, -2.8f}, {0.10f, 0.10f, 0.10f}, {65, 61, 57}};
@@ -37,164 +33,54 @@ bool Check(bool passed, const char* label)
 class GpuTimer
 {
 public:
-    ~GpuTimer()
+    bool Record(RHIComputeCommandEncoder& commands, const RHIComputeCommandEncoder::FrameRecorder& record)
     {
-        if (m_Vulkan != nullptr && m_VulkanQueries != VK_NULL_HANDLE)
+        const bool success = commands.MeasureGpuWork([&](auto& scope)
         {
-            vkDestroyQueryPool(m_Vulkan->GetDevice().GetHandle(), m_VulkanQueries, nullptr);
-        }
-        if (m_GLQueries[0] != 0)
-        {
-            glDeleteQueries(2, m_GLQueries);
-        }
+            const bool recorded = record(scope);
+            m_ReadbackRequested = Clock::now();
+            return recorded;
+        }, m_Timestamp);
+        return success;
     }
 
-    bool Init(RHISceneFrameLifecycle* frame)
+    double ReadbackMicroseconds() const
     {
-        m_DX = dynamic_cast<DX12SceneContext*>(frame);
-        m_Vulkan = dynamic_cast<VulkanSceneContext*>(frame);
-        if (m_DX != nullptr)
-        {
-            auto* device = m_DX->GetNativeDevice();
-            std::uint64_t frequency = 0;
-            if (m_DX->GetGraphicsTimestampFrequency(frequency) == false)
-            {
-                return false;
-            }
-            m_MicrosecondsPerTick = 1.0e6 / static_cast<double>(frequency);
-            const D3D12_QUERY_HEAP_DESC query{D3D12_QUERY_HEAP_TYPE_TIMESTAMP, 2, 0};
-            D3D12_HEAP_PROPERTIES heap{};
-            heap.Type = D3D12_HEAP_TYPE_READBACK;
-            D3D12_RESOURCE_DESC buffer{};
-            buffer.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-            buffer.Width = 2 * sizeof(std::uint64_t);
-            buffer.Height = 1;
-            buffer.DepthOrArraySize = 1;
-            buffer.MipLevels = 1;
-            buffer.SampleDesc.Count = 1;
-            buffer.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-            return SUCCEEDED(device->CreateQueryHeap(&query, IID_PPV_ARGS(&m_DXQueries))) &&
-                SUCCEEDED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &buffer,
-                    D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_DXTicks)));
-        }
-        if (m_Vulkan != nullptr)
-        {
-            const auto& device = m_Vulkan->GetDevice();
-            const auto physical = device.GetPhysicalDeviceHandle();
-            std::uint32_t count = 0;
-            vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, nullptr);
-            std::vector<VkQueueFamilyProperties> queues(count);
-            vkGetPhysicalDeviceQueueFamilyProperties(physical, &count, queues.data());
-            const auto family = device.GetGraphicsQueueFamilyIndex();
-            if (family >= count || queues[family].timestampValidBits == 0)
-            {
-                return false;
-            }
-            const auto bits = queues[family].timestampValidBits;
-            m_Mask = bits == 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << bits) - 1;
-            VkPhysicalDeviceProperties properties{};
-            vkGetPhysicalDeviceProperties(physical, &properties);
-            m_MicrosecondsPerTick = properties.limits.timestampPeriod / 1000.0;
-            VkQueryPoolCreateInfo query{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
-            query.queryType = VK_QUERY_TYPE_TIMESTAMP;
-            query.queryCount = 2;
-            return vkCreateQueryPool(device.GetHandle(), &query, nullptr, &m_VulkanQueries) == VK_SUCCESS;
-        }
-        glGenQueries(2, m_GLQueries);
-        GLint bits = 0;
-        glGetQueryiv(GL_TIMESTAMP, GL_QUERY_COUNTER_BITS, &bits);
-        return m_GLQueries[0] != 0 && bits > 0;
-    }
-
-    void Mark(std::uint32_t slot)
-    {
-        if (m_DX != nullptr)
-        {
-            auto* commands = m_DX->GetComputeCommandList();
-            commands->EndQuery(m_DXQueries.Get(), D3D12_QUERY_TYPE_TIMESTAMP, slot);
-            if (slot == 1)
-            {
-                commands->ResolveQueryData(m_DXQueries.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
-                    0, 2, m_DXTicks.Get(), 0);
-            }
-        }
-        else if (m_Vulkan != nullptr)
-        {
-            const auto commands = m_Vulkan->GetComputeCommandBuffer();
-            if (slot == 0)
-            {
-                vkCmdResetQueryPool(commands, m_VulkanQueries, 0, 2);
-            }
-            vkCmdWriteTimestamp(commands, slot == 0 ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT :
-                VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, m_VulkanQueries, slot);
-        }
-        else
-        {
-            glQueryCounter(m_GLQueries[slot], GL_TIMESTAMP);
-        }
+        return std::chrono::duration<double, std::micro>(Clock::now() - m_ReadbackRequested).count();
     }
 
     double Read() const
     {
-        std::uint64_t times[2]{};
-        if (m_DX != nullptr)
+        double nanoseconds = 0.0;
+        if (m_Timestamp == nullptr)
         {
-            void* mapped = nullptr;
-            const D3D12_RANGE read{0, sizeof(times)};
-            if (FAILED(m_DXTicks->Map(0, &read, &mapped)))
-            {
-                return -1.0;
-            }
-            std::memcpy(times, mapped, sizeof(times));
-            const D3D12_RANGE written{0, 0};
-            m_DXTicks->Unmap(0, &written);
+            return -1.0;
         }
-        else if (m_Vulkan != nullptr)
+        const auto deadline = Clock::now() + std::chrono::seconds(5);
+        auto status = m_Timestamp->Poll(nanoseconds);
+        while (status == RHIComputeReadbackStatus::Pending && Clock::now() < deadline)
         {
-            if (vkGetQueryPoolResults(m_Vulkan->GetDevice().GetHandle(), m_VulkanQueries, 0, 2,
-                sizeof(times), times, sizeof(times[0]), VK_QUERY_RESULT_64_BIT) != VK_SUCCESS)
-            {
-                return -1.0;
-            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            status = m_Timestamp->Poll(nanoseconds);
         }
-        else
-        {
-            for (std::size_t i = 0; i < 2; ++i)
-            {
-                GLuint64 value = 0;
-                glGetQueryObjectui64v(m_GLQueries[i], GL_QUERY_RESULT, &value);
-                times[i] = value;
-            }
-        }
-        return static_cast<double>((times[1] - times[0]) & m_Mask) * m_MicrosecondsPerTick;
+        return status == RHIComputeReadbackStatus::Ready ? nanoseconds / 1000.0 : -1.0;
     }
 
 private:
-    DX12SceneContext* m_DX = nullptr;
-    VulkanSceneContext* m_Vulkan = nullptr;
-    ComPtr<ID3D12QueryHeap> m_DXQueries;
-    ComPtr<ID3D12Resource> m_DXTicks;
-    VkQueryPool m_VulkanQueries = VK_NULL_HANDLE;
-    GLuint m_GLQueries[2]{};
-    std::uint64_t m_Mask = ~std::uint64_t{0};
-    double m_MicrosecondsPerTick = 0.001;
+    using Clock = std::chrono::steady_clock;
+    Clock::time_point m_ReadbackRequested;
+    Ref<RHIComputeTimestamp> m_Timestamp;
 };
 
 bool Submit(RHIComputeCommandEncoder& encoder, RHISceneFrameLifecycle* frame, GpuTimer& timer,
     const RHIComputeCommandEncoder::FrameRecorder& record)
 {
-    const auto timed = [&](RHIComputeCommandEncoder& commands)
-    {
-        timer.Mark(0);
-        const bool success = record(commands);
-        timer.Mark(1);
-        return success;
-    };
+    const auto timed = [&](auto& commands) { return timer.Record(commands, record); };
     if (frame == nullptr)
     {
         return timed(encoder);
     }
-    // Resizeは既存Contextの完了処理を通すために使い、GPU timestampの区間には含まれません。
+    // Resize は既存の Frame retire 経路を通す。ホスト側の Readback 観測時間には含まれる。
     return encoder.QueueFrame(timed) && frame->BeginFrame() == RHIFrameResult::Success &&
         frame->EndFrame() == RHIFrameResult::Success && frame->Present() != RHIFrameResult::FatalError &&
         frame->Resize(320, 240);
@@ -225,7 +111,7 @@ std::optional<DenseSDFSource> MakeBoxes(DenseSDFSource::Mode mode, float offset)
 
 bool GenerateDense(RHIComputeCommandEncoder& encoder, RHISceneFrameLifecycle* frame, GpuTimer& timer,
     const RHIComputePipelineSpecification& shader, const DenseSDFSource& source,
-    std::vector<float>& distances, double& microseconds)
+    std::vector<float>& distances, double& microseconds, double& readbackMicroseconds)
 {
     DenseSDFGenerator generator;
     if (generator.Prepare(encoder, shader, source, Grid) == false)
@@ -255,6 +141,7 @@ bool GenerateDense(RHIComputeCommandEncoder& encoder, RHISceneFrameLifecycle* fr
     }
     distances.resize(Grid.GetVoxelCount());
     std::memcpy(distances.data(), bytes.data(), bytes.size());
+    readbackMicroseconds = timer.ReadbackMicroseconds();
     microseconds = timer.Read();
     return microseconds >= 0.0;
 }
@@ -264,6 +151,10 @@ struct Measurement
     std::size_t Batches = 0;
     std::size_t PeakGpuPayload = 0;
     double GpuMicroseconds = 0;
+    double ReadbackMicroseconds = 0;
+    std::uint64_t BufferAllocations = 0;
+    std::uint64_t PipelineAllocations = 0;
+    std::uint64_t AllocatedBufferBytes = 0;
 };
 
 bool FinishSparse(SparseSDFUpdater& updater, RHIComputeCommandEncoder& encoder,
@@ -271,6 +162,7 @@ bool FinishSparse(SparseSDFUpdater& updater, RHIComputeCommandEncoder& encoder,
     std::uint32_t tileBudget, Measurement& result)
 {
     const auto previous = updater.GetSnapshot();
+    const auto before = encoder.GetStatistics();
     while (updater.GetRemainingTileCount() != 0)
     {
         if (Check(updater.PrepareBatch(encoder, shader, tileBudget), "prepare bounded batch") == false)
@@ -300,6 +192,7 @@ bool FinishSparse(SparseSDFUpdater& updater, RHIComputeCommandEncoder& encoder,
         {
             return Check(false, "publish only after final batch");
         }
+        result.ReadbackMicroseconds += timer.ReadbackMicroseconds();
         const double elapsed = timer.Read();
         if (elapsed < 0.0)
         {
@@ -308,7 +201,14 @@ bool FinishSparse(SparseSDFUpdater& updater, RHIComputeCommandEncoder& encoder,
         result.GpuMicroseconds += elapsed;
         ++result.Batches;
     }
-    return updater.GetSnapshot() != nullptr;
+    const auto after = encoder.GetStatistics();
+    result.BufferAllocations = after.Buffers - before.Buffers;
+    result.PipelineAllocations = after.Pipelines - before.Pipelines;
+    result.AllocatedBufferBytes = after.BufferBytes - before.BufferBytes;
+    return updater.GetSnapshot() != nullptr &&
+        Check(result.Batches == 0 || (result.BufferAllocations == result.Batches + 1 &&
+            after.Dispatches - before.Dispatches == result.Batches &&
+            after.Readbacks - before.Readbacks == result.Batches), "reuse completed output buffer across batches");
 }
 
 std::size_t Index(std::uint32_t x, std::uint32_t y, std::uint32_t z)
@@ -393,9 +293,10 @@ bool Measure(RHIComputeCommandEncoder& encoder, RHISceneFrameLifecycle* frame, G
 {
     std::vector<float> dense;
     double denseTime = 0.0;
+    double denseReadback = 0.0;
     SparseSDFUpdater sparse;
     Measurement metrics;
-    if (Check(GenerateDense(encoder, frame, timer, denseShader, source, dense, denseTime), "generate Dense reference") == false ||
+    if (Check(GenerateDense(encoder, frame, timer, denseShader, source, dense, denseTime, denseReadback), "generate Dense reference") == false ||
         sparse.BeginUpdate(source, Grid, Band) == false ||
         FinishSparse(sparse, encoder, frame, timer, sparseShader, 64, metrics) == false)
     {
@@ -419,6 +320,9 @@ bool Measure(RHIComputeCommandEncoder& encoder, RHISceneFrameLifecycle* frame, G
     std::cout << backend << ' ' << name << " denseBytes=" << denseBytes
         << " sparseBytes=" << snapshot->GetPayloadBytes() << " sparsePeakGpuPayload=" << metrics.PeakGpuPayload
         << " denseGpuUs=" << denseTime << " sparseGpuUs=" << metrics.GpuMicroseconds
+        << " denseReadbackUs=" << denseReadback << " sparseReadbackUs=" << metrics.ReadbackMicroseconds
+        << " sparseBufferAllocations=" << metrics.BufferAllocations
+        << " sparseAllocatedBufferBytes=" << metrics.AllocatedBufferBytes
         << " batches=" << metrics.Batches << '\n';
     return Check(snapshot->GetPayloadBytes() < denseBytes, "sparse storage uses less sample payload") &&
         Compare(*snapshot, dense, backend, name, signedDistance);
@@ -452,7 +356,21 @@ bool VerifyIncremental(RHIComputeCommandEncoder& encoder, RHISceneFrameLifecycle
     {
         return false;
     }
+    if (Check(initial.PipelineAllocations == 1 && edited.PipelineAllocations == 0 &&
+        rebuilt.PipelineAllocations == 1, "reuse shader pipeline across updates") == false)
+    {
+        return false;
+    }
     const auto editedSnapshot = incremental.GetSnapshot();
+    const auto beforeNoop = encoder.GetStatistics();
+    if (Check(incremental.BeginUpdate(moved, Grid, Band) && incremental.GetRemainingTileCount() == 0 &&
+        incremental.GetSnapshot()->GetGeneration() == editedSnapshot->GetGeneration() + 1 &&
+        incremental.GetSnapshot()->GetTileCount() == editedSnapshot->GetTileCount() &&
+        encoder.GetStatistics().Dispatches == beforeNoop.Dispatches, "identical update publishes without GPU work") == false)
+    {
+        return false;
+    }
+    const auto noOpSnapshot = incremental.GetSnapshot();
     if (mode == DenseSDFSource::Mode::UnsignedMesh &&
         Check(StaticSDFBoundary::FromSnapshot(editedSnapshot, 0.025f) == nullptr,
             "unsigned Sparse SDF cannot be registered as a signed boundary") == false)
@@ -483,14 +401,14 @@ bool VerifyIncremental(RHIComputeCommandEncoder& encoder, RHISceneFrameLifecycle
     }
     std::cout << backend << " incremental-" << (mode == DenseSDFSource::Mode::ClosedMesh ? "signed" : "unsigned")
         << " dirtyTiles=" << dirty << " rebuiltTiles=" << total
-        << " batches=" << edited.Batches << '\n';
+        << " buffers=" << edited.BufferAllocations << " pipelines=" << edited.PipelineAllocations << " batches=" << edited.Batches << '\n';
     if (incremental.BeginUpdate(start, Grid, Band) == false ||
         incremental.PrepareBatch(encoder, shader, 17) == false)
     {
         return false;
     }
     incremental.Cancel();
-    return Check(incremental.GetSnapshot() == editedSnapshot && incremental.GetRemainingTileCount() == 0,
+    return Check(incremental.GetSnapshot() == noOpSnapshot && incremental.GetRemainingTileCount() == 0,
         "cancel keeps published snapshot");
 }
 } // namespace
@@ -502,7 +420,7 @@ bool RunSparseSDFCases(Raven::RHIDevice& device, const char* backend, Raven::RHI
     RHIComputePipelineSpecification sparseShader;
     GpuTimer timer;
     if (Check(encoder != nullptr && LoadSDFTestShader(device.GetBackend(), false, denseShader) &&
-        LoadSDFTestShader(device.GetBackend(), true, sparseShader) && timer.Init(frame), "initialize shaders and GPU timer") == false)
+        LoadSDFTestShader(device.GetBackend(), true, sparseShader), "initialize SDF shaders") == false)
     {
         return false;
     }
