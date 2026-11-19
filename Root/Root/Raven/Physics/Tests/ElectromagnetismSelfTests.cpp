@@ -1,5 +1,8 @@
 #include "Raven/Physics/Tests/ElectromagnetismSelfTests.h"
 
+#include <algorithm>
+#include <cstdio>
+#include <numbers>
 #include <cassert>
 #include <cmath>
 
@@ -8,6 +11,7 @@
 #include "Raven/Physics/Electromagnetism/ElectricCharge.h"
 #include "Raven/Physics/Electromagnetism/ElectricField.h"
 #include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
+#include "Raven/Physics/Electromagnetism/GridElectromagnetism.h"
 #include "Raven/Physics/Electromagnetism/MagneticField.h"
 #include "Raven/Physics/Electromagnetism/Spatial/CoulombOctree.h"
 #include "Raven/Physics/Astro/CelestialBody.h"
@@ -74,6 +78,167 @@ Entity CreateGravityTestSphere(
     return entity;
 }
 }
+
+// Release の明示テストでも同じ解析解と保存則を検証する。
+bool RunElectromagneticGridSelfTests()
+{
+    class PlaneDistance final : public ScalarField
+    {
+    public:
+        PlaneDistance(int axis, float offset) : m_Axis(axis), m_Offset(offset) {}
+        float Evaluate(const math::Vec3& p) const override { return p[m_Axis] - m_Offset; }
+    private:
+        int m_Axis;
+        float m_Offset;
+    };
+
+    const DenseSDFGrid grid{ {}, { 0.25f, 0.5f, 2.0f }, { 9, 2, 1 } };
+    const PlaneDistance interface(0, 1.0f);
+    const PlaneDistance insulator(1, 0.5f);
+    const std::array materials{
+        ElectromagneticMaterial{ 0.0, 1.0, 1.0 },
+        ElectromagneticMaterial{ 1.0, 1.0, 1.0 },
+        ElectromagneticMaterial{ 3.0, 1.0, 1.0 }
+    };
+    const std::array regions{
+        ElectromagneticMaterialRegion{ 0, insulator },
+        ElectromagneticMaterialRegion{ 1, interface }
+    };
+    const auto material = ElectromagneticMaterialGrid::Build(grid, materials, 2, regions);
+    if (material.has_value() == false || material->MaterialIDs[9] != 1 ||
+        material->MaterialIDs[13] != 2 || material->MaterialIDs[4] != 0)
+    {
+        return false;
+    }
+
+    using Status = ElectromagneticSolveStatus;
+    using Mode = ElectromagneticPotentialMode;
+    std::shared_ptr<const ElectromagneticPotentialResult> result;
+    std::vector<std::optional<double>> electrodes(18);
+    electrodes[9] = 5.0;
+    electrodes[17] = 0.0;
+    const auto solve = [&](Mode mode, std::span<const double> charge, std::uint32_t maxIterations)
+    {
+        return SolveElectromagneticPotential(*material, mode, electrodes, charge, maxIterations, 1.0e-12, result);
+    };
+    if (solve(Mode::SteadyCurrent, {}, 1) != Status::IterationLimit || result != nullptr ||
+        solve(Mode::SteadyCurrent, {}, 2000) != Status::Converged)
+    {
+        return false;
+    }
+
+    // x 方向に 3.5 セルと 4.5 セルの導体が直列に並ぶ。断面積は 1 m²。
+    const double current = 5.0 / (0.25 * (3.5 + 4.5 / 3.0));
+    double currentError = 0.0;
+    double conservationError = 0.0;
+    for (std::size_t cell = 9; cell < 17; ++cell)
+    {
+        currentError = std::max(currentError, std::abs(result->PositiveFaceFlux[cell][0] - current));
+        if (cell != 9)
+        {
+            conservationError = std::max(conservationError, std::abs(result->NetOutwardFlux[cell]));
+        }
+        if (result->PositiveFaceFlux[cell - 9][1] != 0.0)
+        {
+            return false;
+        }
+    }
+
+    const GridElectricPotentialField potential(result);
+    const GridElectricField electric(result);
+    const GridCurrentDensityField density(result);
+    const GridJouleHeatField heat(result);
+    const auto probe = grid.GetCellCenter(5, 1, 0);
+    if (currentError > 1.0e-8 || conservationError > 1.0e-8 ||
+        std::abs(result->NetOutwardFlux[9] + result->NetOutwardFlux[17]) > 1.0e-8 ||
+        NearlyEqual(potential.Evaluate(probe), 1.0f) == false ||
+        NearlyEqual(electric.Evaluate(probe).x, static_cast<float>(current / 3.0)) == false ||
+        NearlyEqual(density.Evaluate(probe).x, static_cast<float>(current)) == false ||
+        NearlyEqual(heat.Evaluate(probe), static_cast<float>(current * current / 3.0)) == false ||
+        density.Evaluate({ -1.0f, 0.0f, 0.0f }) != math::Vec3{})
+    {
+        return false;
+    }
+
+    electrodes[9].reset();
+    electrodes[17].reset();
+    if (solve(Mode::SteadyCurrent, {}, 2000) != Status::MissingReference || result != nullptr)
+    {
+        return false;
+    }
+
+    for (int row = 0; row < 2; ++row)
+    {
+        electrodes[row * 9] = 4.0;
+        electrodes[row * 9 + 8] = 0.0;
+    }
+    if (solve(Mode::Electrostatic, {}, 5000) != Status::Converged ||
+        std::abs(result->Potential[4] - 2.0) > 1.0e-8)
+    {
+        return false;
+    }
+
+    std::vector<double> charge(18);
+    charge[4] = 0.125;
+    charge[13] = 0.125;
+    if (solve(Mode::Electrostatic, charge, 5000) != Status::Converged)
+    {
+        return false;
+    }
+    const double expectedCharge = 0.125 * 0.25;
+    const double chargeError = std::abs(result->NetOutwardFlux[4] - expectedCharge);
+    if (chargeError > 1.0e-8 || std::abs(result->NetOutwardFlux[13] - expectedCharge) > 1.0e-8 ||
+        std::abs(result->NetOutwardFlux[0] + result->NetOutwardFlux[8] +
+            result->NetOutwardFlux[9] + result->NetOutwardFlux[17] + 2.0 * expectedCharge) > 1.0e-8)
+    {
+        return false;
+    }
+
+    std::array<math::Vec3, 128> coil{};
+    for (std::size_t i = 0; i < coil.size(); ++i)
+    {
+        const double angle = 2.0 * std::numbers::pi * static_cast<double>(i) / coil.size();
+        coil[i] = probe + math::Vec3{ static_cast<float>(std::cos(angle)), static_cast<float>(std::sin(angle)), -0.5f };
+    }
+    const auto magnetic = CoilMagneticField::Create(coil, 2.0, materials[2].Permeability, 0.001);
+    if (magnetic.has_value() == false)
+    {
+        return false;
+    }
+    const auto field = magnetic->Evaluate(probe);
+    const double referenceB = 1.0 / std::pow(1.25, 1.5);
+    const double magneticError = std::abs(field.z - referenceB) / referenceB;
+    if (magneticError > 0.001 || std::abs(field.x) > 1.0e-6f || std::abs(field.y) > 1.0e-6f)
+    {
+        return false;
+    }
+
+    // Registry の非所有参照より先に Field を構築し、Scene の fixed-step で力の向きと大きさを確認する。
+    Scene scene;
+    auto body = CreateChargedSphere(scene, "Grid Lorentz", probe, 2.0);
+    auto& rigidBody = body.GetComponent<RigidBodyComponent>();
+    rigidBody.LinearVelocity = { 1.0f, 0.0f, 0.0f };
+    auto& world = scene.GetPhysicsSimulationWorld();
+    auto& system = world.GetElectromagneticSystem();
+    if (system.RegisterElectricField(electric) == false ||
+        system.RegisterMagneticField(*magnetic) == false)
+    {
+        return false;
+    }
+    rigidBody.LinearDamping = 0.0f;
+    const auto initialVelocity = rigidBody.LinearVelocity;
+    const auto force = electric.Evaluate(probe) * 2.0f + math::Vec3::Cross(initialVelocity, field) * 2.0f;
+    constexpr float dt = 1.0f / 60.0f;
+    world.StepSimulation(scene, dt);
+    if ((rigidBody.LinearVelocity - (initialVelocity + force * dt)).Length() > 1.0e-5f)
+    {
+        return false;
+    }
+    std::printf("Phase 08: current error=%.9g A, balance error=%.9g A, charge error=%.9g C, coil relative error=%.9g\n",
+        currentError, conservationError, chargeError, magneticError);
+    return true;
+}
+
 
 void RunElectromagnetismSelfTests()
 {

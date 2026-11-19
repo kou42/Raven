@@ -714,6 +714,8 @@ D:.
     |   |   |   |   |   ElectromagneticStatistics.h
     |   |   |   |   |   ElectromagneticSystem.cpp
     |   |   |   |   |   ElectromagneticSystem.h
+    |   |   |   |   |   GridElectromagnetism.cpp
+    |   |   |   |   |   GridElectromagnetism.h
     |   |   |   |   |   MagneticField.cpp
     |   |   |   |   |   MagneticField.h
     |   |   |   |   |

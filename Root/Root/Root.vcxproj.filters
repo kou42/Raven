@@ -1292,4 +1292,9 @@
     <ClInclude Update="Raven\Physics\Fluid\Debug\RunGPUGridFluidDemo.h"><Filter>Raven\Physics\Fluid\Debug</Filter></ClInclude>
     <None Include="Raven\Assets\Shaders\GPUGridFluid.comp"><Filter>Raven\Assets\Shaders</Filter></None>
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Physics\Electromagnetism" />
+    <ClCompile Update="Raven\Physics\Electromagnetism\GridElectromagnetism.cpp"><Filter>Raven\Physics\Electromagnetism</Filter></ClCompile>
+    <ClInclude Update="Raven\Physics\Electromagnetism\GridElectromagnetism.h"><Filter>Raven\Physics\Electromagnetism</Filter></ClInclude>
+  </ItemGroup>
 </Project>

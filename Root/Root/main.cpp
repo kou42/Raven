@@ -54,6 +54,7 @@
 #include "Raven/Physics/SoftBody/Debug/SoftBodyJellyDemoLayer.h"
 
 #include "Raven/Diagnostics/Tests/DiagnosticSelfTests.h"
+#include "Raven/Physics/Tests/ElectromagnetismSelfTests.h"
 #ifdef _DEBUG
 #include "Raven/Core/Tests/ExplicitSceneFrameSelfTests.h"
 #include "Raven/Core/Jobs/Tests/JobSystemSelfTests.h"
@@ -71,7 +72,6 @@
 #include "Raven/Core/Containers/Tests/StringSelfTests.h"
 #include "Raven/Core/Containers/Tests/NameSelfTests.h"
 #include "Raven/Physics/Astro/Tests/AstroWorldSelfTests.h"
-#include "Raven/Physics/Tests/ElectromagnetismSelfTests.h"
 #include "Raven/Physics/Tests/FluidCouplingMeasurementSelfTests.h"
 #include "Raven/Physics/Tests/FluidWorldSelfTests.h"
 #include "Raven/Physics/Tests/PhysicsFieldSelfTests.h"
@@ -207,7 +207,7 @@ int main(int argc, char* argv[])
 #ifdef _WIN32
         if (backendArgument == "--test-scene-simulation" || backendArgument == "--test-physics-collision" ||
             backendArgument == "--test-fluid-sph"
-            || backendArgument == "--test-explicit-frame" || backendArgument == "--test-softbody-integrated"
+            || backendArgument == "--test-electromagnetism" || backendArgument == "--test-explicit-frame" || backendArgument == "--test-softbody-integrated"
             || backendArgument == "--test-scene-view" || backendArgument == "--measure-scene-view"
             || backendArgument == "--test-scene-runtime" || backendArgument == "--measure-scene-runtime")
         {
@@ -244,6 +244,19 @@ int main(int argc, char* argv[])
         if (backendArgument == "--measure-scene-graph")
         {
             Raven::tests::RunSceneGraphMeasurements();
+            return 0;
+        }
+        if (backendArgument == "--test-electromagnetism")
+        {
+#ifdef _DEBUG
+            Raven::ph::tests::RunElectromagnetismSelfTests();
+#endif
+            if (Raven::ph::tests::RunElectromagneticGridSelfTests() == false)
+            {
+                std::cerr << "Electromagnetic grid self-tests failed.\n";
+                return 1;
+            }
+            std::cout << "Electromagnetic self-tests passed.\n";
             return 0;
         }
         // GPU/WindowなしでFrame失敗時の後始末を確認する専用入口です。
