@@ -1262,4 +1262,14 @@
     <None Include="..\Tests\ComputeShaders\Smoke.vert"><Filter>Tests</Filter></None>
     <None Include="..\Tests\ComputeShaders\Smoke.frag"><Filter>Tests</Filter></None>
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Physics\Field"><UniqueIdentifier>{1cb07d0c-f991-431d-8a4f-8a06d58a8eba}</UniqueIdentifier></Filter>
+    <Filter Include="Raven\Assets\Shaders"><UniqueIdentifier>{397c438f-d05c-4f20-bca7-71dbc4f0473d}</UniqueIdentifier></Filter>
+    <ClCompile Update="Raven\Physics\Field\DenseSDF.cpp"><Filter>Raven\Physics\Field</Filter></ClCompile>
+    <ClInclude Update="Raven\Physics\Field\DenseSDF.h"><Filter>Raven\Physics\Field</Filter></ClInclude>
+    <None Include="Raven\Assets\Shaders\DenseSDF.comp"><Filter>Raven\Assets\Shaders</Filter></None>
+    <None Include="Raven\Assets\Shaders\DenseSDF.hlsl"><Filter>Raven\Assets\Shaders</Filter></None>
+    <None Include="Raven\Assets\Shaders\DenseSDF.inc"><Filter>Raven\Assets\Shaders</Filter></None>
+    <ClCompile Include="..\Tests\DenseSDFGPUIntegrationTests.cpp"><Filter>Tests</Filter></ClCompile>
+  </ItemGroup>
 </Project>

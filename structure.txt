@@ -141,6 +141,10 @@ D:.
     |   |   |   |       Quaternius_UAL1_Standard.json
     |   |   |   |       Raven_human_test.json
     |   |   |   +---Shaders
+    |   |   |   |   |   DenseSDF.comp
+    |   |   |   |   |   DenseSDF.hlsl
+    |   |   |   |   |   DenseSDF.inc
+    |   |   |   |   |
     |   |   |   |   +---DirectX12
     |   |   |   |   |       BuildSceneMesh.ps1
     |   |   |   |   |       BuildUI.ps1
@@ -711,6 +715,8 @@ D:.
     |   |   |   |           CoulombOctree.cpp
     |   |   |   |           CoulombOctree.h
     |   |   |   +---Field
+    |   |   |   |       DenseSDF.cpp
+    |   |   |   |       DenseSDF.h
     |   |   |   |       GravityField.h
     |   |   |   |       PhysicsField.h
     |   |   |   +---Fluid

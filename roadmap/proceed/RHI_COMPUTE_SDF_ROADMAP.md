@@ -4,7 +4,7 @@
 
 対象: `kou42/Raven` / `master`
 
-状態: **Phase 00〜02 の監査と共通契約を記録済み。Phase 03〜04 の OpenGL / DX12 / Vulkan Compute 実装と GPU Smoke Test が完了**
+状態: **Phase 00〜04 の監査・共通契約・3 Backend の Compute を確認済み。Phase 05 の GPU Dense SDF を実装・検証済み**
 
 ## 1. 目的とスコープ
 
@@ -312,13 +312,35 @@ foreach ($stage in @('cs', 'vs', 'ps')) {
 
 ### Phase 05 — GPU Dense SDF
 
-- [ ] 解析的球 SDF を GPU 3D Texture に生成し CPU 参照と比較。
-- [ ] Triangle Mesh → Unsigned Distance Field（Voxel-Centric）を実装。
-- [ ] 閉じたメッシュの内外符号判定を実装。開いたメッシュは別契約にする。
-- [ ] 境界法線、薄い形状、退化三角形、Transform、Voxel解像度を検証。
-- [ ] SDF を可視化し、CPU/GPU 距離誤差を測定。
+- [x] 解析的球 SDF を GPU 3D Texture に生成し CPU 参照と比較。
+- [x] Triangle Mesh → Unsigned Distance Field（Voxel-Centric）を実装。
+- [x] 閉じたメッシュの内外符号判定を実装。開いたメッシュは別契約にする。
+- [x] 境界法線、薄い形状、退化三角形、Transform、Voxel解像度を検証。
+- [x] SDF を可視化し、CPU/GPU 距離誤差を測定。
 
 **完了条件**: 既知形状とメッシュで符号・距離・法線の誤差が規定値内に収まる。
+
+#### Phase 05 実装・検証記録（2026-11-19）
+
+- `DenseSDFSource` は CPU 上で球または world-space のインデックス付き三角形 Mesh を評価する。符号付き Mesh は各有向辺が逆向きの辺と 1 組になり、面が非退化であることを検査する。頂点の溶接、自己交差の回避、体積境界としての向きの整合は入力の前提とする。閉じた Mesh の符号は立体角の総和から求め、距離の大きさは各三角形への最短距離とする。開いた Mesh は符号なしを指定し、退化面は線分と点として評価する。[Generalized Winding Numbers](https://igl.ethz.ch/projects/winding-number/)
+- `DenseSDFGrid` は world-space に軸を揃えたセル中心 Grid。軸ごとの間隔はメートル。法線は近傍の距離を中央差分し、単位化する。境界セルやゼロに近い勾配は法線なし。Mesh の Transform は頂点へ適用してから入力する。
+- `DenseSDFGenerator::Prepare` で Pipeline と Resource を作り、`Record` が Compute と Barrier、非同期 Readback を記録する。OpenGL では同一 Context、DX12 / Vulkan では `QueueFrame` 経由で記録する。Shader は各ボクセルで評価した距離を単一 Mip の R32F 3D Texture と数値検証用 Buffer に書く。測定と断面表示は Buffer の値を使用し、Texture 自体の Readback は扱わない。閉じた Mesh の計算量はボクセル数 × 三角形数。Sparse 化と高速化は Phase 06 で扱う。
+- RTX 3080 上の各 Backend で、球 2 解像度、平行移動・回転・軸ごとの拡縮を適用した箱、厚さ 0.13 m の薄い箱、開いた平面、退化線分を比較した。合格条件は距離の最大絶対誤差 `1e-4 m` 以下、CPU 参照の格子法線との内積 `0.999` 以上、球の解析法線との内積 `0.998` 以上。境界セルの法線なしと、開いた Mesh / 退化面の符号付き入力拒否も確認した。
+- 3 Backend で各 89,812 ボクセルを評価した。CPU 実装と GPU の距離差、および解析距離に対する GPU の誤差は、いずれも最大絶対値 `3.58e-7 m`。球の解析法線との最小内積は粗い Grid で `0.999964`、細かい Grid で `0.999997`。DX12 GPU-Based Validation と Vulkan 同期検証を有効にしたログの Validation error は 0 件。各 Backend で 6 枚、計 18 枚の断面 SVG を生成した。
+- Debug / Release x64 と Debug x64 GPU 統合テストは成功。Phase 00 と同じ GLFW 依存と PDB 回避設定を使用した。既存の 3 Backend Compute → Graphics と、Explicit Frame / Scene Lifecycle セルフテストも成功した。
+
+リポジトリルートから検証用バイナリ Shader を生成する。
+
+```powershell
+$out = New-Item -ItemType Directory -Force Root/Tests/x64/ComputeShaders
+$shader = 'Root/Root/Raven/Assets/Shaders'
+& "$env:VULKAN_SDK/Bin/glslc.exe" -DRAVEN_VULKAN=1 "$shader/DenseSDF.comp" -o "$out/DenseSDF.spv"
+if ($LASTEXITCODE -ne 0) { throw 'Dense SDF SPIR-V compilation failed' }
+& "$env:VULKAN_SDK/Bin/dxc.exe" -T cs_6_0 -E CSMain "$shader/DenseSDF.hlsl" -Fo "$out/DenseSDF.dxil"
+if ($LASTEXITCODE -ne 0) { throw 'Dense SDF DXIL compilation failed' }
+```
+
+`RavenUIGPUTest=true` の Debug x64 ビルド後、`Root/Root` から `../x64/Debug/RavenUIGPUTests.exe --dense-sdf=opengl` を実行する。DX12 / Vulkan は引数を `--dense-sdf=dx12` / `--dense-sdf=vulkan` に替え、Phase 04 と同じ Validation 設定を使う。各ケースの XY 中央断面が `Root/Tests/x64/ComputeShaders/DenseSDF-<backend>-<case>.svg` に出力される。青は内側、赤は外側、白は表面近傍。
 
 ### Phase 06 — Narrow-Band / Sparse SDF
 

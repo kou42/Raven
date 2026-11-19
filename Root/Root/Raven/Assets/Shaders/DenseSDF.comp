@@ -1,0 +1,27 @@
+#version 430 core
+#ifdef RAVEN_VULKAN
+#extension GL_GOOGLE_include_directive : require
+#endif
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+layout(std430, binding = 0) readonly buffer Parameters { vec4 words[]; };
+layout(std430, binding = 1) writeonly buffer Distances { float distances[]; };
+layout(r32f, binding = 2) uniform writeonly image3D volume;
+
+#define VEC3 vec3
+#define VEC4 vec4
+#define UVEC3 uvec3
+#define AS_UINT floatBitsToUint
+#define AS_UINT3 floatBitsToUint
+#define ATAN2 atan
+
+vec4 ReadWord(uint index) { return words[index]; }
+void WriteDistance(uvec3 cell, uint index, float distance)
+{
+    distances[index] = distance;
+    imageStore(volume, ivec3(cell), vec4(distance, 0, 0, 1));
+}
+
+#include "DenseSDF.inc"
+
+void main() { EvaluateCell(gl_GlobalInvocationID); }
