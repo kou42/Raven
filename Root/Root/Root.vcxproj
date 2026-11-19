@@ -169,6 +169,8 @@
     <ClInclude Include="..\Tests\UIPerformanceTests.h" />
     <ClCompile Include="..\Tests\UIFontTextureGPUIntegrationTests.cpp" Condition="'$(RavenUIGPUTest)'=='true'" />
     <ClCompile Include="..\Tests\OpenGLComputeGPUIntegrationTests.cpp" Condition="'$(RavenUIGPUTest)'=='true'" />
+    <ClCompile Include="..\Tests\DenseSDFGPUIntegrationTests.cpp" Condition="'$(RavenUIGPUTest)'=='true'" />
+    <None Include="Raven\Assets\Shaders\DenseSDF.comp;Raven\Assets\Shaders\DenseSDF.hlsl;Raven\Assets\Shaders\DenseSDF.inc" />
     <None Include="..\Tests\ComputeShaders\Smoke.hlsl;..\Tests\ComputeShaders\Smoke.comp;..\Tests\ComputeShaders\Smoke.vert;..\Tests\ComputeShaders\Smoke.frag" />
     <ClCompile Include="src\glad.c" />
     <ClCompile Include="Raven\**\*.cpp" />

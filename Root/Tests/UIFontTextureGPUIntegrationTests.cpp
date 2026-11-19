@@ -1395,8 +1395,29 @@ bool TestUIGeometryParity()
 
 bool RunOpenGLComputeGPUIntegrationTests();
 
+bool RunDenseSDFGPUIntegrationTests(Raven::RHIBackend backend);
+
 int main(int argc, char** argv)
 {
+    if (argc == 2 && std::string_view(argv[1]).starts_with("--dense-sdf="))
+    {
+        const auto backend = std::string_view(argv[1]).substr(std::string_view("--dense-sdf=").size());
+        Raven::RHIBackend selected = Raven::RHIBackend::None;
+        if (backend == "opengl")
+        {
+            selected = Raven::RHIBackend::OpenGL;
+        }
+        else if (backend == "dx12")
+        {
+            selected = Raven::RHIBackend::DirectX12;
+        }
+        else if (backend == "vulkan")
+        {
+            selected = Raven::RHIBackend::Vulkan;
+        }
+        return selected != Raven::RHIBackend::None && RunDenseSDFGPUIntegrationTests(selected)
+            ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
     if (argc == 2 && std::string(argv[1]) == "--vulkan-compute")
     {
         return TestVulkanComputeSmoke() ? EXIT_SUCCESS : EXIT_FAILURE;
