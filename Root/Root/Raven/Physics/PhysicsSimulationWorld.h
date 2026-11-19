@@ -1,7 +1,8 @@
-﻿#pragma once
+#pragma once
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "Raven/Physics/Astro/AstroWorld.h"
@@ -404,6 +405,8 @@ struct CelestialDipoleMagneticFieldBinding
 // Raven全体のPhysics Domainを統括する上位Worldです。
 // Electromagnetism / Rigid Body / Fluid / Soft Body / ThermalのFixed Step順序をここへ集約し、
 // 後続のCoupling実装でもScene/Game/RendererへDomain間依存を漏らさない構造を維持します。
+class GridThermalCoupling;
+
 class PhysicsSimulationWorld
 {
 public:
@@ -455,6 +458,8 @@ public:
     SoftBodyWorld& GetSoftBodyWorld();
     const SoftBodyWorld& GetSoftBodyWorld() const;
 
+    void SetGridThermalCoupling(std::shared_ptr<GridThermalCoupling> coupling);
+
     ThermalWorld& GetThermalWorld();
     const ThermalWorld& GetThermalWorld() const;
 
@@ -479,6 +484,8 @@ private:
     PhysicsWorld m_RigidBodyWorld;
     FluidWorld m_FluidWorld;
     SoftBodyWorld m_SoftBodyWorld;
+    std::shared_ptr<GridThermalCoupling> m_GridThermalCoupling;
+    bool m_RegisteredGridTemperature = false;
     ThermalWorld m_ThermalWorld;
     std::vector<RigidSoftSphereColliderBinding> m_RigidSoftSphereColliderBindings;
     std::vector<CelestialDipoleMagneticFieldBinding> m_CelestialDipoleMagneticFieldBindings;

@@ -1,9 +1,13 @@
 #include "Raven/Physics/Contact.h"
+#include "Raven/Physics/Coupling/GridThermalCoupling.h"
+#include "Raven/Physics/Electromagnetism/GridElectromagnetism.h"
 #include "Raven/Physics/Thermal/ThermalComponents.h"
 #include "Raven/Physics/Thermal/ThermalSystem.h"
 #include "Raven/Physics/Thermal/ThermalWorld.h"
 #include "Raven/Scene/Scene.h"
 
+#include <cstdio>
+#include <utility>
 #include <cassert>
 #include <cmath>
 #include <vector>
@@ -380,6 +384,124 @@ void RunPhysicsSimulationThermalContactTest()
     assert(hotThermal.Body.Temperature < 373.15f);
     assert(coldThermal.Body.Temperature > 293.15f);
 }
+}
+
+
+bool RunGridThermalSelfTests()
+{
+    const DenseSDFGrid grid{ {}, { 1.0f, 1.0f, 1.0f }, { 3, 1, 1 } };
+    const std::array material{ ElectromagneticMaterial{ 2.0, 1.0, 1.0 } };
+    const auto materialGrid = ElectromagneticMaterialGrid::Build(grid, material, 0, {});
+    const std::array<std::optional<double>, 3> electrode{ 4.0, std::nullopt, 0.0 };
+    std::shared_ptr<const ElectromagneticPotentialResult> electrical;
+    if (materialGrid.has_value() == false ||
+        SolveElectromagneticPotential(*materialGrid, ElectromagneticPotentialMode::SteadyCurrent,
+            electrode, {}, 100, 1.0e-12, electrical) != ElectromagneticSolveStatus::Converged)
+    {
+        return false;
+    }
+
+    const std::array initial{ 300.0, 300.0, 300.0 };
+    auto temperature = GridTemperatureField::Create(grid, 2.0, 0.0, initial);
+    if (temperature.has_value() == false)
+    {
+        return false;
+    }
+    auto thermal = std::make_shared<GridThermalCoupling>(std::move(*temperature));
+    if (thermal->SetJouleHeating(electrical) == false)
+    {
+        return false;
+    }
+    const std::array particle{ GridHeatParticle{ grid.GetCellCenter(1, 0, 0), 4.0 } };
+    thermal->SetParticles(particle);
+    Scene scene;
+    auto& world = scene.GetPhysicsSimulationWorld();
+    world.SetGridThermalCoupling(thermal);
+    const auto probe = grid.GetCellCenter(1, 0, 0);
+    auto probeEntity = scene.CreateEntity("Grid temperature probe");
+    probeEntity.GetComponent<TransformComponent>().Position = probe;
+    auto& probeBody = probeEntity.AddComponent<ThermalBodyComponent>().Body;
+    probeBody.Temperature = 300.0f;
+    probeBody.Material.SpecificHeatCapacity = 1.0f;
+    auto& convection = probeEntity.AddComponent<ThermalConvectionComponent>();
+    convection.HeatTransferCoefficient = 1.0f;
+    convection.SurfaceArea = 1.0f;
+    world.StepSimulation(scene, 0.25f);
+    const double energyError = std::abs(thermal->GetField().GetTotalEnergy() - 1804.0);
+    const auto& registry = world.GetThermalWorld().GetTemperatureFieldRegistry();
+    if (thermal->GetLastStatus() != GridThermalStepStatus::Advanced || energyError > 1.0e-10 || probeBody.Temperature <= 300.0f ||
+        std::abs(registry.Evaluate(probe, 0.0f) - 301.5f) > 1.0e-6f ||
+        registry.Evaluate({ -1.0f, 0.0f, 0.0f }, 275.0f) != 275.0f)
+    {
+        return false;
+    }
+
+    class TestFluid final : public FluidSimulationParticipant, public VectorField
+    {
+    public:
+        void SimulateFluid(float) override { m_Speed = 1.0f; }
+        math::Vec3 Evaluate(const math::Vec3&) const override { return { m_Speed, 0.0f, 0.0f }; }
+    private:
+        float m_Speed = 0.0f;
+    };
+    const std::array hotCell{ 100.0, 0.0, 0.0 };
+    auto transport = GridTemperatureField::Create(grid, 1.0, 0.0, hotCell);
+    if (transport.has_value() == false)
+    {
+        return false;
+    }
+    const auto fluid = std::make_shared<TestFluid>();
+    auto advected = std::make_shared<GridThermalCoupling>(std::move(*transport));
+    advected->SetFluidVelocity(fluid);
+    if (world.GetFluidWorld().RegisterSimulationParticipant(*fluid) == false)
+    {
+        return false;
+    }
+    world.SetGridThermalCoupling(advected);
+    world.StepSimulation(scene, 0.25f);
+    const auto translated = advected->GetField().GetTemperatures();
+    if (registry.ContainsField(thermal->GetField()) || advected->GetLastStatus() != GridThermalStepStatus::Advanced ||
+        translated[0] != 75.0 || translated[1] != 25.0 || translated[2] != 0.0 ||
+        advected->GetField().GetTotalEnergy() != 100.0)
+    {
+        return false;
+    }
+    world.GetFluidWorld().UnregisterSimulationParticipant(*fluid);
+    world.SetGridThermalCoupling(nullptr);
+
+    const DenseSDFGrid reactionGrid{ {}, { 1.0f, 1.0f, 1.0f }, { 2, 1, 1 } };
+    const std::array ignitionTemperature{ 500.0, 299.0 };
+    auto diffused = GridTemperatureField::Create(reactionGrid, 1.0, 1.0, ignitionTemperature);
+    if (diffused.has_value() == false)
+    {
+        return false;
+    }
+    GridThermalCoupling reaction(std::move(*diffused));
+    const std::array fuel{ 1.0, 1.0 };
+    if (reaction.SetCombustion({ 300.0, 1.0, 100.0 }, fuel) == false)
+    {
+        return false;
+    }
+    reaction.Step(2.0f);
+    if (reaction.GetLastStatus() != GridThermalStepStatus::UnstableStep ||
+        reaction.GetFuelDensity()[0] != 1.0 || reaction.GetField().GetTemperatures()[0] != 500.0)
+    {
+        return false;
+    }
+    reaction.Step(0.25f);
+    if (reaction.GetLastStatus() != GridThermalStepStatus::Advanced || reaction.GetFuelDensity()[1] != 1.0 ||
+        reaction.GetField().GetTemperatures()[1] != 349.25 || reaction.GetField().GetTotalEnergy() != 824.0)
+    {
+        return false;
+    }
+    reaction.Step(0.25f);
+    if (reaction.GetLastStatus() != GridThermalStepStatus::Advanced || reaction.GetFuelDensity()[1] != 0.75 ||
+        reaction.GetField().GetTotalEnergy() != 874.0)
+    {
+        return false;
+    }
+    std::printf("Phase 09: heat balance error=%.9g J, advected heat=25 J, ignition propagated after 1 step\n", energyError);
+    return true;
 }
 
 void RunThermalWorldSelfTests()

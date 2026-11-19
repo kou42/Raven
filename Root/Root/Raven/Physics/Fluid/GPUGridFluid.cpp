@@ -1,6 +1,7 @@
 #include "Raven/Physics/Fluid/GPUGridFluid.h"
 
 #include <cmath>
+#include <cstring>
 
 namespace Raven::ph
 {
@@ -98,6 +99,12 @@ bool GPUGridFluid::Prepare(Ref<RHIComputeCommandEncoder> encoder, RHIComputePipe
     m_FixedStep = settings.FixedStep;
     m_CurrentVelocity = 0;
     m_StepGeneration = 0;
+    m_VelocityGrid = grid;
+    m_VelocityTicket.reset();
+    m_CompletedVelocities.clear();
+    m_TicketGeneration = 0;
+    m_CompletedVelocityGeneration = 0;
+    m_VelocityReadbackCount = 0;
     m_ReadbackCount = 0;
     m_Ready = true;
     return true;
@@ -140,6 +147,65 @@ Ref<RHIComputeReadback> GPUGridFluid::RequestParticleReadback()
     }
     return result;
 }
+
+bool GPUGridFluid::UpdateVelocityReadback()
+{
+    if (m_Ready == false)
+    {
+        return false;
+    }
+    const auto count = m_VelocityGrid.GetVoxelCount();
+    if (m_VelocityTicket != nullptr)
+    {
+        std::vector<std::byte> bytes;
+        const auto status = m_VelocityTicket->Poll(bytes);
+        if (status == RHIComputeReadbackStatus::Pending)
+        {
+            return true;
+        }
+        m_VelocityTicket.reset();
+        if (status != RHIComputeReadbackStatus::Ready || bytes.size() != count * sizeof(Word))
+        {
+            return false;
+        }
+
+        std::vector<math::Vec3> velocities(count);
+        for (std::size_t cell = 0; cell < count; ++cell)
+        {
+            Word value{};
+            std::memcpy(&value, bytes.data() + cell * sizeof(Word), sizeof(Word));
+            velocities[cell] = { value[0], value[1], value[2] };
+            if (IsFinite(velocities[cell]) == false)
+            {
+                return false;
+            }
+        }
+        m_CompletedVelocities = std::move(velocities);
+        m_CompletedVelocityGeneration = m_TicketGeneration;
+    }
+
+    if (m_CompletedVelocities.empty() || m_CompletedVelocityGeneration != m_StepGeneration)
+    {
+        // Storage書き込みをReadbackへ公開する。コピー後にPing-Pong Bufferを再利用できる。
+        if (m_Encoder->Barrier(RHIComputeConsumer::BufferReadback) == false)
+        {
+            return false;
+        }
+        m_VelocityTicket = m_Encoder->RequestBufferReadback(m_Velocity[m_CurrentVelocity], 0, count * sizeof(Word));
+        if (m_VelocityTicket == nullptr)
+        {
+            return false;
+        }
+        m_TicketGeneration = m_StepGeneration;
+        ++m_VelocityReadbackCount;
+    }
+    return true;
+}
+
+const DenseSDFGrid& GPUGridFluid::GetVelocityGrid() const { return m_VelocityGrid; }
+std::span<const math::Vec3> GPUGridFluid::GetCompletedVelocities() const { return m_CompletedVelocities; }
+std::uint64_t GPUGridFluid::GetCompletedVelocityGeneration() const { return m_CompletedVelocityGeneration; }
+std::uint64_t GPUGridFluid::GetVelocityReadbackCount() const { return m_VelocityReadbackCount; }
 
 const Ref<RHIComputeResource>& GPUGridFluid::GetParticleBuffer() const { return m_Particles; }
 std::uint64_t GPUGridFluid::GetStepGeneration() const { return m_StepGeneration; }

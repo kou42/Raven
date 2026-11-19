@@ -1297,4 +1297,12 @@
     <ClCompile Update="Raven\Physics\Electromagnetism\GridElectromagnetism.cpp"><Filter>Raven\Physics\Electromagnetism</Filter></ClCompile>
     <ClInclude Update="Raven\Physics\Electromagnetism\GridElectromagnetism.h"><Filter>Raven\Physics\Electromagnetism</Filter></ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Physics\Thermal" />
+    <Filter Include="Raven\Physics\Coupling" />
+    <ClCompile Update="Raven\Physics\Thermal\GridTemperatureField.cpp"><Filter>Raven\Physics\Thermal</Filter></ClCompile>
+    <ClInclude Update="Raven\Physics\Thermal\GridTemperatureField.h"><Filter>Raven\Physics\Thermal</Filter></ClInclude>
+    <ClCompile Update="Raven\Physics\Coupling\GridThermalCoupling.cpp"><Filter>Raven\Physics\Coupling</Filter></ClCompile>
+    <ClInclude Update="Raven\Physics\Coupling\GridThermalCoupling.h"><Filter>Raven\Physics\Coupling</Filter></ClInclude>
+  </ItemGroup>
 </Project>

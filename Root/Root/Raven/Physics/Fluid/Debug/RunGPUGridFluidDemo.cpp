@@ -1,5 +1,7 @@
 #include "Raven/Physics/Fluid/Debug/RunGPUGridFluidDemo.h"
 #include "Raven/Physics/Fluid/GPUGridFluid.h"
+#include "Raven/Physics/Coupling/GridThermalCoupling.h"
+#include "Raven/Scene/Scene.h"
 #include "Raven/Physics/PhysicsSimulationWorld.h"
 #include "Raven/Platform/OpenGL/RHI/OpenGLCompute.h"
 #include "Raven/Platform/OpenGL/RHI/OpenGLRHIDevice.h"
@@ -346,6 +348,76 @@ bool Verify(GLFWwindow& window, const Ref<RHIComputeCommandEncoder>& encoder, co
         Check(VerifyUndefinedNormal(encoder, sphere), "undefined normal reporting and stable position");
 }
 
+bool VerifyThermalVelocity(const Ref<RHIComputeCommandEncoder>& encoder, const DenseSDFSource& sphere,
+    std::span<const Vec3> seeds)
+{
+    RHIComputePipelineSpecification sdf, grid, particles;
+    DenseSDFGenerator boundary;
+    auto fluid = std::make_shared<GPUGridFluid>();
+    GPUGridFluidSettings settings;
+    settings.InitialVelocity = { 1.2f, 0.0f, 0.0f };
+    if (PrepareShaders(sdf, grid, particles) == false || boundary.Prepare(*encoder, sdf, sphere, DemoGrid) == false ||
+        boundary.RecordTexture(*encoder) == false || fluid->Prepare(encoder, grid, particles, boundary, settings, seeds) == false)
+    {
+        return false;
+    }
+
+    const std::size_t hotCell = 5 + DemoGrid.Size[0] * (20 + DemoGrid.Size[1] * 2);
+    std::vector<double> initial(DemoGrid.GetVoxelCount());
+    initial[hotCell] = 100.0;
+    auto temperature = GridTemperatureField::Create(DemoGrid, 1000.0, 0.0, initial);
+    if (temperature.has_value() == false)
+    {
+        return false;
+    }
+    auto thermal = std::make_shared<GridThermalCoupling>(std::move(*temperature));
+    thermal->SetGPUFluid(fluid);
+    Scene scene;
+    auto& world = scene.GetPhysicsSimulationWorld();
+    if (world.GetFluidWorld().RegisterSimulationParticipant(*fluid) == false)
+    {
+        return false;
+    }
+    world.SetGridThermalCoupling(thermal);
+    const double energy = thermal->GetField().GetTotalEnergy();
+    const auto start = std::chrono::steady_clock::now();
+    world.StepSimulation(scene, FixedStep);
+    const auto queued = std::chrono::steady_clock::now();
+    if (thermal->GetLastStatus() != GridThermalStepStatus::WaitingForVelocity ||
+        thermal->GetField().GetTotalEnergy() != energy || fluid->GetVelocityReadbackCount() != 1 ||
+        fluid->GetReadbackCount() != 0 || fluid->GetStepGeneration() != 1)
+    {
+        return false;
+    }
+
+    // テストだけが待機する。第1世代のコピーを第2世代のDispatch後に消費して所有と同期を確認する。
+    while (fluid->GetCompletedVelocities().empty() && std::chrono::steady_clock::now() - start < std::chrono::seconds(5))
+    {
+        if (fluid->UpdateVelocityReadback() == false)
+        {
+            return false;
+        }
+        if (fluid->GetCompletedVelocities().empty())
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+    const auto visible = std::chrono::steady_clock::now();
+    world.StepSimulation(scene, FixedStep);
+    const auto result = thermal->GetField().GetTemperatures();
+    const double energyError = std::abs(thermal->GetField().GetTotalEnergy() - energy);
+    std::cout << "Phase 09 GPU heat: step=" << fluid->GetStepGeneration()
+        << ", consumed=" << thermal->GetUsedVelocityGeneration()
+        << ", velocity readbacks=" << fluid->GetVelocityReadbackCount()
+        << ", first fixed step CPU ms=" << std::chrono::duration<double, std::milli>(queued - start).count()
+        << ", first snapshot ms=" << std::chrono::duration<double, std::milli>(visible - start).count()
+        << ", downwind K=" << result[hotCell + 1] << ", energy error J=" << energyError << '\n';
+    return thermal->GetLastStatus() == GridThermalStepStatus::Advanced &&
+        thermal->GetUsedVelocityGeneration() == 1 && fluid->GetStepGeneration() == 2 &&
+        fluid->GetVelocityReadbackCount() == 2 && fluid->GetReadbackCount() == 0 &&
+        std::abs(result[hotCell + 1] - 20.0) < 1.0e-4 && energyError < 1.0e-9;
+}
+
 bool Run(GLFWwindow& window, bool verify)
 {
     OpenGLRHIDevice device;
@@ -371,7 +443,8 @@ bool Run(GLFWwindow& window, bool verify)
     settings.ParticleRadius = ParticleRadius;
     if (verify)
     {
-        return Verify(window, encoder, renderer, *sphere, settings, seeds);
+        return Verify(window, encoder, renderer, *sphere, settings, seeds) &&
+            Check(VerifyThermalVelocity(encoder, *sphere, seeds), "completed velocity snapshot and conservative heat advection");
     }
     Simulation simulation;
     if (simulation.Init(encoder, *sphere, settings, seeds) == false)

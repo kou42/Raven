@@ -32,6 +32,13 @@ public:
     void SimulateFluid(float fixedDeltaTime) override;
 
     Ref<RHIComputeReadback> RequestParticleReadback();
+    // 同じOpenGL Contextで呼ぶ。Pending中は前回の完了データを保持し、待機しない。
+    bool UpdateVelocityReadback();
+    const DenseSDFGrid& GetVelocityGrid() const;
+    std::span<const math::Vec3> GetCompletedVelocities() const;
+    std::uint64_t GetCompletedVelocityGeneration() const;
+    std::uint64_t GetVelocityReadbackCount() const;
+
     const Ref<RHIComputeResource>& GetParticleBuffer() const;
     std::uint64_t GetStepGeneration() const;
     std::uint64_t GetReadbackCount() const;
@@ -52,6 +59,12 @@ private:
     float m_FixedStep = 0.0f;
     std::uint64_t m_StepGeneration = 0;
     std::uint64_t m_ReadbackCount = 0;
+    DenseSDFGrid m_VelocityGrid{};
+    Ref<RHIComputeReadback> m_VelocityTicket;
+    std::vector<math::Vec3> m_CompletedVelocities;
+    std::uint64_t m_TicketGeneration = 0;
+    std::uint64_t m_CompletedVelocityGeneration = 0;
+    std::uint64_t m_VelocityReadbackCount = 0;
     bool m_Ready = false;
 };
 } // namespace Raven::ph

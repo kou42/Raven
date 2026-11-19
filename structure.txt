@@ -694,6 +694,8 @@ D:.
     |   |   |   |       FluidRigidBodyCoupling.h
     |   |   |   |       FluidStaticColliderCoupling.cpp
     |   |   |   |       FluidStaticColliderCoupling.h
+    |   |   |   |       GridThermalCoupling.cpp
+    |   |   |   |       GridThermalCoupling.h
     |   |   |   +---Debug
     |   |   |   |       PhysicsDebugImmediatePanel.h
     |   |   |   |       PhysicsDebugOverlayFont.h
@@ -846,6 +848,8 @@ D:.
     |   |   |   |       ThermalWorldSelfTests.cpp
     |   |   |   |       ThermalWorldSelfTests.h
     |   |   |   \---Thermal
+    |   |   |           GridTemperatureField.cpp
+    |   |   |           GridTemperatureField.h
     |   |   |           TemperatureField.cpp
     |   |   |           TemperatureField.h
     |   |   |           TemperatureFieldRegistry.cpp
