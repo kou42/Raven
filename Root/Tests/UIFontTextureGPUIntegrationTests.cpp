@@ -1395,13 +1395,16 @@ bool TestUIGeometryParity()
 
 bool RunOpenGLComputeGPUIntegrationTests();
 
-bool RunDenseSDFGPUIntegrationTests(Raven::RHIBackend backend);
+bool RunDenseSDFGPUIntegrationTests(Raven::RHIBackend backend, bool sparse);
 
 int main(int argc, char** argv)
 {
-    if (argc == 2 && std::string_view(argv[1]).starts_with("--dense-sdf="))
+    if (argc == 2 && (std::string_view(argv[1]).starts_with("--dense-sdf=") ||
+        std::string_view(argv[1]).starts_with("--sparse-sdf=")))
     {
-        const auto backend = std::string_view(argv[1]).substr(std::string_view("--dense-sdf=").size());
+        const auto argument = std::string_view(argv[1]);
+        const bool sparse = argument.starts_with("--sparse-sdf=");
+        const auto backend = argument.substr(argument.find('=') + 1);
         Raven::RHIBackend selected = Raven::RHIBackend::None;
         if (backend == "opengl")
         {
@@ -1415,7 +1418,7 @@ int main(int argc, char** argv)
         {
             selected = Raven::RHIBackend::Vulkan;
         }
-        return selected != Raven::RHIBackend::None && RunDenseSDFGPUIntegrationTests(selected)
+        return selected != Raven::RHIBackend::None && RunDenseSDFGPUIntegrationTests(selected, sparse)
             ? EXIT_SUCCESS : EXIT_FAILURE;
     }
     if (argc == 2 && std::string(argv[1]) == "--vulkan-compute")

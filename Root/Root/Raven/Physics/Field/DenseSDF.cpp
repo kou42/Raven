@@ -139,6 +139,7 @@ std::optional<DenseSDFSource> DenseSDFSource::CreateMesh(std::span<const Vec3> v
             return std::nullopt;
         }
     }
+    source.m_TriangleIndices.assign(triangles.begin(), triangles.end());
     return source;
 }
 
@@ -174,6 +175,7 @@ DenseSDFSource::Mode DenseSDFSource::GetMode() const { return m_Mode; }
 Vec3 DenseSDFSource::GetCenter() const { return m_Center; }
 float DenseSDFSource::GetRadius() const { return m_Radius; }
 std::span<const Vec3> DenseSDFSource::GetTriangleVertices() const { return m_TriangleVertices; }
+std::span<const DenseSDFSource::Triangle> DenseSDFSource::GetTriangleIndices() const { return m_TriangleIndices; }
 
 Vec3 DenseSDFGrid::GetCellCenter(std::uint32_t x, std::uint32_t y, std::uint32_t z) const
 {

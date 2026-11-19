@@ -4,7 +4,7 @@
 
 対象: `kou42/Raven` / `master`
 
-状態: **Phase 00〜04 の監査・共通契約・3 Backend の Compute を確認済み。Phase 05 の GPU Dense SDF を実装・検証済み**
+状態: **Phase 00〜05 の 3 Backend Compute / Dense SDF を確認済み。Phase 06 の Narrow-Band / Sparse SDF を実装・検証済み**
 
 ## 1. 目的とスコープ
 
@@ -344,13 +344,50 @@ if ($LASTEXITCODE -ne 0) { throw 'Dense SDF DXIL compilation failed' }
 
 ### Phase 06 — Narrow-Band / Sparse SDF
 
-- [ ] Triangle-Centric 候補範囲と Atomic Min 等の距離集約を検証。
-- [ ] Narrow Band、Sparse Tile、Tile Lookup、タイル境界補間を実装。
-- [ ] 距離の量子化（8-bit 等）は精度測定後に採否を決定。
-- [ ] Incremental Update / フレーム分散を実装。
-- [ ] Dense SDF に対してメモリ・GPU時間・距離精度を比較。
+- [x] Triangle-Centric 候補範囲とセル単位の最小距離集約を検証。
+- [x] Narrow Band、Sparse Tile、Tile Lookup、タイル境界補間を実装。
+- [x] 距離の量子化（8-bit 等）は精度測定後に採否を決定。
+- [x] Incremental Update / フレーム分散を実装。
+- [x] Dense SDF に対してメモリ・GPU時間・距離精度を比較。
 
 **完了条件**: 精度劣化を定量化したうえで、対象シーンに対する省メモリまたは高速化が確認できる。
+
+#### Phase 06 実装・検証記録（2026-11-20）
+
+- 各三角形の world-space AABB を補間の余白を含む帯域で広げ、重なるタイルへ候補を登録する。GPU は 4×4×4 セルを 1 Workgroup で評価し、各セルの 1 Invocation がそのタイルの候補の最小距離を集約する。セルごとに書き込み元が 1 つなので、Atomic Min 用の初期化・競合を避けられる。符号付き Mesh は、帯域に届いたセルでのみ全三角形の立体角を評価する。
+- `SparseSDFSnapshot` はタイル座標で検索できる CPU スナップショット。GPU バッチは Storage Buffer にタイル順で出力し、Readback の完了後に CPU 側へ保持する。公開帯域幅にセル対角長を加えた距離まで補間サンプルを残す。`TrySample` は必要な隣接タイルを横断して三線形補間し、帯域外や欠損は失敗として返す。
+- `SparseSDFUpdater` は `BeginUpdate` → `PrepareBatch` → `RecordBatch` → `Poll` で反復する。OpenGL は同一 Context、DX12 / Vulkan は `QueueFrame` を使う。1 回の更新で同じ Encoder を使い、すべてのバッチの Readback が完了した時点で新しい世代を公開する。未変更タイルのサンプルは前の世代と共有する。
+- 符号なし Mesh は候補の集合と対応する三角形座標が同じタイルを再利用する。符号付き Mesh は同じインデックス接続の頂点移動に対し、変更面の始点・終点を含む掃引 AABB を帯域分拡張し、その周辺の現行タイルを再生成する。接続が変わる場合は現行候補全体を再生成する。更新で消えたタイルは次の公開世代から除かれる。
+- メモリ比較には Dense の R32F サンプル配列と Sparse のタイルキー + R32F サンプルの論理バイト数を使う。Sparse のピーク GPU ペイロードは 1 バッチの入力・出力 Buffer の論理サイズを別途記録する。コンテナ・アロケータ・ステージングの実割当は含めない。GPU 時間は Compute 記録と GPU コピーを挟む各 Backend の GPU タイムスタンプを使い、バッチごとの区間を合計する。
+
+RTX 3080、65×61×57 セル、間隔 0.10 m、公開帯域 ±0.13 m で比較した。Dense のサンプルは各ケース 904,020 バイト。Sparse は球で 34,572 バイト（96.2% 減、129 タイル）、閉じた箱 2 個で 53,600 バイト（94.1% 減、200 タイル）。Sparse のピーク GPU 入出力ペイロードは球 18,512 バイト、箱 26,960 バイト。
+
+| Backend | 球 Dense → Sparse（ms） | 箱 Dense → Sparse（ms） |
+|---|---:|---:|
+| OpenGL | 5.393 → 2.649 | 4.720 → 60.200 |
+| DX12 | 0.110 → 0.052 | 0.238 → 0.113 |
+| Vulkan | 0.365 → 0.030 | 0.419 → 0.110 |
+
+GPU 時間は各 3 回の中央値。OpenGL の Sparse 箱は 42.7〜60.5 ms で Dense の 4.0〜9.4 ms より遅く、性能改善は追加調査が必要。
+
+- 3 Backend とも Dense に対する帯域内のセル距離差は 0 m。タイルをまたぐ補間の最大絶対誤差は `2.24e-7 m`（合格基準 `1e-4 m`）。箱の片方を移動した差分更新は、符号付き・符号なしとも 225 タイル中 125 タイルを 8 バッチで再生成し、全再生成と許容誤差内で一致した。最終バッチまで旧世代を返し、準備後のキャンセルでも公開世代を維持した。
+- 補間の余白を含む範囲を対称な 8-bit 符号付き整数に量子化する試算では、最大絶対誤差 `1.19e-3 m` が基準 `1e-4 m` を超えたため、R32F を採用した。
+- Debug / Release x64、Debug x64 GPU 統合テスト、従来の 3 Backend Dense SDF と Explicit Frame / Scene Lifecycle テストはすべて成功。DX12 GPU-Based Validation と Vulkan 同期検証のエラーは 0 件。ビルドには GLFW 依存の補完と既存 PDB 回避設定を用いた。
+
+検証用 Shader は Phase 05 と同じ出力先に `DenseSDF` と `SparseSDF` の両方を生成する。
+
+```powershell
+$out = New-Item -ItemType Directory -Force Root/Tests/x64/ComputeShaders
+$shader = 'Root/Root/Raven/Assets/Shaders'
+foreach ($name in @('DenseSDF', 'SparseSDF')) {
+    & "$env:VULKAN_SDK/Bin/glslc.exe" -DRAVEN_VULKAN=1 "$shader/$name.comp" -o "$out/$name.spv"
+    if ($LASTEXITCODE -ne 0) { throw "SPIR-V compilation failed ($name)" }
+    & "$env:VULKAN_SDK/Bin/dxc.exe" -T cs_6_0 -E CSMain "$shader/$name.hlsl" -Fo "$out/$name.dxil"
+    if ($LASTEXITCODE -ne 0) { throw "DXIL compilation failed ($name)" }
+}
+```
+
+`RavenUIGPUTest=true` の Debug x64 ビルド後、`Root/Root` から `../x64/Debug/RavenUIGPUTests.exe --sparse-sdf=opengl` を実行する。DX12 / Vulkan は `--sparse-sdf=dx12` / `--sparse-sdf=vulkan` とし、Phase 04 と同じ Validation 設定を使う。
 
 ### Phase 07 — Physics / Fluid / Particle 連携
 

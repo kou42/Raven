@@ -33,6 +33,7 @@ public:
     RHIFrameResult BeginFrame() override;
     bool QueueComputeWork(const Ref<RHIComputeFrameWork>& work);
     ID3D12GraphicsCommandList* GetComputeCommandList() const;
+    bool GetGraphicsTimestampFrequency(std::uint64_t& frequency) const;
     RHIFrameResult EndFrame() override;
     RHIFrameResult Present() override;
     bool Resize(uint32_t width, uint32_t height) override;

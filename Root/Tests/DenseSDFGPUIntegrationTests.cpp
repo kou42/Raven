@@ -42,25 +42,33 @@ std::string ReadText(const std::string& path)
     return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
 }
 
-bool LoadShader(RHIBackend backend, RHIComputePipelineSpecification& shader)
+bool LoadShader(RHIBackend backend, bool sparse, RHIComputePipelineSpecification& shader)
 {
+    const std::string name = sparse ? "SparseSDF" : "DenseSDF";
     if (backend == RHIBackend::OpenGL)
     {
-        shader.OpenGLSource = ReadText(std::string(ShaderDirectory) + "DenseSDF.comp");
-        const auto common = ReadText(std::string(ShaderDirectory) + "DenseSDF.inc");
-        const std::string include = "#include \"DenseSDF.inc\"";
-        const auto marker = shader.OpenGLSource.find(include);
-        if (marker == std::string::npos || common.empty())
+        shader.OpenGLSource = ReadText(std::string(ShaderDirectory) + name + ".comp");
+        for (const auto* file : {"DenseSDF.inc", "SparseSDF.inc"})
         {
-            return false;
+            if (sparse == false && std::string_view(file) == "SparseSDF.inc")
+            {
+                continue;
+            }
+            const std::string include = std::string("#include \"") + file + "\"";
+            const auto marker = shader.OpenGLSource.find(include);
+            const auto common = ReadText(std::string(ShaderDirectory) + file);
+            if (marker == std::string::npos || common.empty())
+            {
+                return false;
+            }
+            shader.OpenGLSource.replace(marker, include.size(), common);
         }
-        shader.OpenGLSource.replace(marker, include.size(), common);
         return true;
     }
     const bool dx12 = backend == RHIBackend::DirectX12;
     RHIShaderBinary binary;
     if (RHIShaderBinaryLoader::LoadForBackend(std::string(OutputDirectory) +
-        (dx12 ? "DenseSDF.dxil" : "DenseSDF.spv"), backend, binary, dx12 ? "CSMain" : "main") == false)
+        name + (dx12 ? ".dxil" : ".spv"), backend, binary, dx12 ? "CSMain" : "main") == false)
     {
         return false;
     }
@@ -257,7 +265,7 @@ bool RunCases(RHIDevice& device, const char* backend, RHISceneFrameLifecycle* fr
 {
     RHIComputePipelineSpecification shader;
     auto encoder = device.CreateComputeCommandEncoder();
-    if (Check(encoder != nullptr && LoadShader(device.GetBackend(), shader), "Compute encoder and shader") == false)
+    if (Check(encoder != nullptr && LoadShader(device.GetBackend(), false, shader), "Compute encoder and shader") == false)
     {
         return false;
     }
@@ -324,9 +332,17 @@ bool RunCases(RHIDevice& device, const char* backend, RHISceneFrameLifecycle* fr
 }
 } // namespace
 
-bool RunDenseSDFGPUIntegrationTests(Raven::RHIBackend backend)
+bool LoadSDFTestShader(Raven::RHIBackend backend, bool sparse, Raven::RHIComputePipelineSpecification& shader)
+{
+    return LoadShader(backend, sparse, shader);
+}
+
+bool RunSparseSDFCases(Raven::RHIDevice& device, const char* backend, Raven::RHISceneFrameLifecycle* frame);
+
+bool RunDenseSDFGPUIntegrationTests(Raven::RHIBackend backend, bool sparse)
 {
     using namespace Raven;
+    const auto run = sparse ? RunSparseSDFCases : RunCases;
     if (backend == RHIBackend::DirectX12 || backend == RHIBackend::Vulkan)
     {
         auto window = Window::Create(WindowSpecification("Dense SDF", 320, 240, backend));
@@ -338,11 +354,11 @@ bool RunDenseSDFGPUIntegrationTests(Raven::RHIBackend backend)
         {
             DX12SceneContext context;
             DX12SceneRHIDevice device(context);
-            return Check(context.Init(*window), "DX12 context") && RunCases(device, "dx12", &context);
+            return Check(context.Init(*window), "DX12 context") && run(device, "dx12", &context);
         }
         VulkanSceneContext context;
         VulkanSceneRHIDevice device(context);
-        return Check(context.Init(*window), "Vulkan context") && RunCases(device, "vulkan", &context);
+        return Check(context.Init(*window), "Vulkan context") && run(device, "vulkan", &context);
     }
     if (glfwInit() != GLFW_TRUE)
     {
@@ -359,7 +375,7 @@ bool RunDenseSDFGPUIntegrationTests(Raven::RHIBackend backend)
         glfwMakeContextCurrent(window);
         OpenGLRHIDevice device;
         passed = gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)) != 0 &&
-            RunCases(device, "opengl", nullptr);
+            run(device, "opengl", nullptr);
         glfwDestroyWindow(window);
     }
     glfwTerminate();

@@ -39,6 +39,7 @@ float SolidAngle(VEC3 a, VEC3 b, VEC3 c)
     return denominator == 0.0 ? sign(numerator) * 3.14159265 : 2.0 * ATAN2(numerator, denominator);
 }
 
+#ifndef RAVEN_SPARSE
 void EvaluateCell(UVEC3 cell)
 {
     UVEC3 size = AS_UINT3(ReadWord(2).xyz);
@@ -80,3 +81,4 @@ void EvaluateCell(UVEC3 cell)
     }
     WriteDistance(cell, cell.x + size.x * (cell.y + size.y * cell.z), distance);
 }
+#endif
