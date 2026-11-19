@@ -1280,4 +1280,16 @@
     <None Include="Raven\Assets\Shaders\SparseSDF.inc"><Filter>Raven\Assets\Shaders</Filter></None>
     <ClCompile Include="..\Tests\SparseSDFGPUIntegrationTests.cpp"><Filter>Tests</Filter></ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven\Physics\Collision" />
+    <Filter Include="Raven\Physics\Fluid" />
+    <Filter Include="Raven\Physics\Fluid\Debug" />
+    <ClCompile Update="Raven\Physics\Collision\StaticSDFCollider.cpp"><Filter>Raven\Physics\Collision</Filter></ClCompile>
+    <ClInclude Update="Raven\Physics\Collision\StaticSDFCollider.h"><Filter>Raven\Physics\Collision</Filter></ClInclude>
+    <ClCompile Update="Raven\Physics\Fluid\GPUGridFluid.cpp"><Filter>Raven\Physics\Fluid</Filter></ClCompile>
+    <ClInclude Update="Raven\Physics\Fluid\GPUGridFluid.h"><Filter>Raven\Physics\Fluid</Filter></ClInclude>
+    <ClCompile Update="Raven\Physics\Fluid\Debug\RunGPUGridFluidDemo.cpp"><Filter>Raven\Physics\Fluid\Debug</Filter></ClCompile>
+    <ClInclude Update="Raven\Physics\Fluid\Debug\RunGPUGridFluidDemo.h"><Filter>Raven\Physics\Fluid\Debug</Filter></ClInclude>
+    <None Include="Raven\Assets\Shaders\GPUGridFluid.comp"><Filter>Raven\Assets\Shaders</Filter></None>
+  </ItemGroup>
 </Project>

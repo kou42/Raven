@@ -18,6 +18,7 @@ public:
     std::uint64_t GetGeneration() const;
     std::size_t GetTileCount() const;
     std::size_t GetPayloadBytes() const;
+    bool IsSigned() const;
     bool TryGetCell(const RHIComputeExtent& cell, float& distance) const;
     bool TrySample(math::Vec3 worldPosition, float& distance) const;
 
@@ -28,6 +29,7 @@ private:
     float m_Band = 0.0f;
     float m_Support = 0.0f;
     std::uint64_t m_Generation = 0;
+    bool m_Signed = false;
     std::map<RHIComputeExtent, Ref<const Tile>> m_Tiles;
 };
 

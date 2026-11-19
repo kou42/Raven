@@ -48,6 +48,7 @@ bool ClipBox(const DenseSDFGrid& grid, Vec3 low, Vec3 high,
 
 std::uint64_t SparseSDFSnapshot::GetGeneration() const { return m_Generation; }
 std::size_t SparseSDFSnapshot::GetTileCount() const { return m_Tiles.size(); }
+bool SparseSDFSnapshot::IsSigned() const { return m_Signed; }
 std::size_t SparseSDFSnapshot::GetPayloadBytes() const
 {
     return m_Tiles.size() * (sizeof(Tile) + sizeof(RHIComputeExtent));
@@ -211,6 +212,7 @@ bool SparseSDFUpdater::BeginUpdate(const DenseSDFSource& source, const DenseSDFG
     auto next = CreateRef<SparseSDFSnapshot>();
     next->m_Grid = grid;
     next->m_Band = band;
+    next->m_Signed = source.GetMode() != DenseSDFSource::Mode::UnsignedMesh;
     next->m_Support = support;
     next->m_Generation = m_Snapshot == nullptr ? 1 : m_Snapshot->m_Generation + 1;
     m_NextSource = source;

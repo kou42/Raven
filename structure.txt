@@ -144,6 +144,7 @@ D:.
     |   |   |   |   |   DenseSDF.comp
     |   |   |   |   |   DenseSDF.hlsl
     |   |   |   |   |   DenseSDF.inc
+    |   |   |   |   |   GPUGridFluid.comp
     |   |   |   |   |   SparseSDF.comp
     |   |   |   |   |   SparseSDF.hlsl
     |   |   |   |   |   SparseSDF.inc
@@ -684,6 +685,8 @@ D:.
     |   |   |   |       StaticMeshTriangleBVH.h
     |   |   |   |       StaticMeshTriangleBVHQuery.cpp
     |   |   |   |       StaticMeshTriangleBVHQuery.h
+    |   |   |   |       StaticSDFCollider.cpp
+    |   |   |   |       StaticSDFCollider.h
     |   |   |   +---Coupling
     |   |   |   |       FluidColliderContact.cpp
     |   |   |   |       FluidColliderContact.h
@@ -730,6 +733,8 @@ D:.
     |   |   |   |   |   FluidSimulationParticipant.h
     |   |   |   |   |   FluidSpatialHashGrid.cpp
     |   |   |   |   |   FluidSpatialHashGrid.h
+    |   |   |   |   |   GPUGridFluid.cpp
+    |   |   |   |   |   GPUGridFluid.h
     |   |   |   |   |   SPHKernel.cpp
     |   |   |   |   |   SPHKernel.h
     |   |   |   |   |   SPHSettings.h
@@ -741,6 +746,8 @@ D:.
     |   |   |   |           FluidCouplingPreset.h
     |   |   |   |           FluidSPHDemoLayer.cpp
     |   |   |   |           FluidSPHDemoLayer.h
+    |   |   |   |           RunGPUGridFluidDemo.cpp
+    |   |   |   |           RunGPUGridFluidDemo.h
     |   |   |   +---Particle
     |   |   |   |       ParticleSpatialHashGrid.cpp
     |   |   |   |       ParticleSpatialHashGrid.h

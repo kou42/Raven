@@ -4,6 +4,7 @@
 
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Math/Math.h"
+#include "Raven/Physics/Collision/StaticSDFCollider.h"
 #include "Raven/Physics/Coupling/FluidColliderContact.h"
 #include "Raven/Scene/Scene.h"
 
@@ -81,6 +82,27 @@ void FluidStaticColliderCoupling::ResolveScene(
             }
             if (ResolveParticleAgainstCollider(particle, transform, collider))
             {
+                ++m_LastStatistics.ResolvedContactCount;
+            }
+        }
+    }
+
+    for (auto [entity, boundary] : scene.View<StaticSDFColliderComponent>())
+    {
+        const auto* body = scene.TryGetComponent<RigidBodyComponent>(entity.GetIndex());
+        if (boundary.Boundary == nullptr || (body != nullptr && body->Type != BodyType::Static))
+        {
+            continue;
+        }
+        ++m_LastStatistics.SupportedColliderCount;
+        for (auto& particle : particles)
+        {
+            ++m_LastStatistics.CandidatePairCount;
+            SDFSphereContact contact{};
+            if (GenerateSDFSphereContact(*boundary.Boundary, particle.Position, m_Settings.ParticleRadius, contact))
+            {
+                particle.Position += contact.OutwardNormal * contact.Penetration;
+                ResolveVelocity(particle, contact.OutwardNormal, boundary.Restitution);
                 ++m_LastStatistics.ResolvedContactCount;
             }
         }

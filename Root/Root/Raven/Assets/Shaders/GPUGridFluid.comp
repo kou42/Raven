@@ -1,0 +1,169 @@
+#version 430 core
+
+layout(local_size_x = 64) in;
+layout(std430, binding = 0) readonly buffer Parameters { vec4 settings[]; };
+layout(std430, binding = 1) readonly buffer VelocityField { vec4 oldVelocity[]; };
+layout(std430, binding = 2) buffer Output { vec4 outputValues[]; };
+layout(r32f, binding = 3) uniform readonly image3D boundary;
+
+uint Index(ivec3 cell, ivec3 size)
+{
+    return uint(cell.x + size.x * (cell.y + size.y * cell.z));
+}
+
+vec3 Center(ivec3 cell)
+{
+    return settings[0].xyz + (vec3(cell) + 0.5) * settings[1].xyz;
+}
+
+vec3 GridCoordinate(vec3 p, ivec3 size)
+{
+    return clamp((p - settings[0].xyz) / settings[1].xyz - 0.5, vec3(0), vec3(size - 1));
+}
+
+vec3 ReadVelocity(ivec3 cell, ivec3 size)
+{
+    return oldVelocity[Index(clamp(cell, ivec3(0), size - 1), size)].xyz;
+}
+
+vec3 SampleVelocity(vec3 p, ivec3 size)
+{
+    vec3 coordinate = GridCoordinate(p, size);
+    ivec3 a = ivec3(coordinate);
+    vec3 t = fract(coordinate);
+    vec3 value = vec3(0);
+    for (int z = 0; z < 2; ++z)
+    for (int y = 0; y < 2; ++y)
+    for (int x = 0; x < 2; ++x)
+    {
+        vec3 w = mix(1.0 - t, t, vec3(x, y, z));
+        value += ReadVelocity(a + ivec3(x, y, z), size) * w.x * w.y * w.z;
+    }
+    return value;
+}
+
+float SampleDistance(vec3 p, ivec3 size)
+{
+    vec3 coordinate = GridCoordinate(p, size);
+    ivec3 a = ivec3(coordinate);
+    vec3 t = fract(coordinate);
+    float value = 0.0;
+    for (int z = 0; z < 2; ++z)
+    for (int y = 0; y < 2; ++y)
+    for (int x = 0; x < 2; ++x)
+    {
+        vec3 w = mix(1.0 - t, t, vec3(x, y, z));
+        value += imageLoad(boundary, min(a + ivec3(x, y, z), size - 1)).r * w.x * w.y * w.z;
+    }
+    return value;
+}
+
+vec3 DistanceGradient(vec3 p, ivec3 size, vec3 stepSize)
+{
+    vec3 dx = vec3(stepSize.x, 0, 0);
+    vec3 dy = vec3(0, stepSize.y, 0);
+    vec3 dz = vec3(0, 0, stepSize.z);
+    return vec3(SampleDistance(p + dx, size) - SampleDistance(p - dx, size),
+        SampleDistance(p + dy, size) - SampleDistance(p - dy, size),
+        SampleDistance(p + dz, size) - SampleDistance(p - dz, size)) / (2.0 * stepSize);
+}
+
+#ifdef RAVEN_GRID
+void main()
+{
+    uint index = gl_GlobalInvocationID.x;
+    ivec3 size = imageSize(boundary);
+    if (index >= uint(size.x * size.y * size.z))
+    {
+        return;
+    }
+    ivec3 cell = ivec3(int(index) % size.x, (int(index) / size.x) % size.y, int(index) / (size.x * size.y));
+    if (imageLoad(boundary, cell).r <= 0.0)
+    {
+        outputValues[index] = vec4(0);
+        return;
+    }
+    float dt = settings[0].w;
+    vec3 w = settings[3].xyz;
+    vec3 advected = SampleVelocity(Center(cell) - dt * ReadVelocity(cell, size), size);
+    vec3 velocity = (1.0 - 2.0 * (w.x + w.y + w.z)) * advected + settings[2].xyz * dt;
+    velocity += (ReadVelocity(cell + ivec3(1, 0, 0), size) + ReadVelocity(cell - ivec3(1, 0, 0), size)) * w.x;
+    velocity += (ReadVelocity(cell + ivec3(0, 1, 0), size) + ReadVelocity(cell - ivec3(0, 1, 0), size)) * w.y;
+    velocity += (ReadVelocity(cell + ivec3(0, 0, 1), size) + ReadVelocity(cell - ivec3(0, 0, 1), size)) * w.z;
+    outputValues[index] = vec4(velocity, 0);
+}
+#else
+void main()
+{
+    uint index = gl_GlobalInvocationID.x * 2u;
+    if (index >= uint(outputValues.length()))
+    {
+        return;
+    }
+    ivec3 size = imageSize(boundary);
+    vec4 particle = outputValues[index];
+    vec3 velocity = SampleVelocity(particle.xyz, size);
+    float dt = settings[0].w;
+    vec3 spacing = settings[1].xyz;
+    float radius = settings[1].w;
+    const int maxSteps = 32;
+    float maxIncrement = 0.25 * min(spacing.x, min(spacing.y, spacing.z));
+    float maxTravel = maxIncrement * float(maxSteps);
+    float travel = length(velocity) * dt;
+    float flags = 0.0;
+    if (isnan(travel) || isinf(travel))
+    {
+        outputValues[index + 1u] = vec4(0, 0, 0, 1);
+        return;
+    }
+    if (travel > maxTravel)
+    {
+        velocity *= maxTravel / travel;
+        travel = maxTravel;
+        flags = 2.0;
+    }
+    int steps = clamp(int(ceil(travel / maxIncrement)), 1, maxSteps);
+    vec3 increment = velocity * dt / float(steps);
+    vec3 low = Center(ivec3(1));
+    vec3 high = Center(size - 2);
+    vec3 position = particle.xyz;
+    for (int step = 0; step < steps; ++step)
+    {
+        vec3 next = clamp(position + increment, low, high);
+        float distance = SampleDistance(next, size);
+        if (distance < radius)
+        {
+            vec3 normal = DistanceGradient(next, size, spacing);
+            float squared = dot(normal, normal);
+            if (squared <= 1.0e-8 || isnan(squared) || isinf(squared))
+            {
+                velocity = vec3(0);
+                flags += 1.0;
+                break;
+            }
+            normal *= inversesqrt(squared);
+            // 三線形距離は厳密なSDFからずれるため、補正後の位置も検査します。
+            for (int projection = 0; projection < 3 && distance < radius; ++projection)
+            {
+                next = clamp(next + normal * (radius - distance), low, high);
+                distance = SampleDistance(next, size);
+            }
+            if (distance + 1.0e-5 >= radius)
+            {
+                position = next;
+                velocity -= normal * min(dot(velocity, normal), 0.0);
+                particle.w += 1.0;
+            }
+            else
+            {
+                velocity = vec3(0);
+                flags += 1.0;
+            }
+            break;
+        }
+        position = next;
+    }
+    outputValues[index] = vec4(position, particle.w);
+    outputValues[index + 1u] = vec4(velocity, flags);
+}
+#endif
