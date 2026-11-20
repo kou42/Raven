@@ -23,4 +23,15 @@ private:
     std::vector<std::function<void(bool)>> m_Completions;
 };
 
+class RHICompletedComputeTimestamp final : public RHIComputeTimestamp
+{
+public:
+    void Complete(bool success, double nanoseconds) noexcept;
+    RHIComputeReadbackStatus Poll(double& nanoseconds) override;
+
+private:
+    RHIComputeReadbackStatus m_Status = RHIComputeReadbackStatus::Pending;
+    double m_Nanoseconds = 0.0;
+};
+
 } // namespace Raven

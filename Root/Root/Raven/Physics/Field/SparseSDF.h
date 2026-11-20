@@ -54,6 +54,7 @@ private:
     static Candidates BuildCandidates(const DenseSDFSource& source, const DenseSDFGrid& grid, float support);
     void Publish();
     void ResetBatch();
+    void ResetUpdate();
 
     Ref<const SparseSDFSnapshot> m_Snapshot;
     std::optional<DenseSDFSource> m_Source;
@@ -67,8 +68,11 @@ private:
     std::uint32_t m_BatchTiles = 0;
     std::size_t m_BatchBytes = 0;
     Ref<RHIComputePipeline> m_Pipeline;
+    std::weak_ptr<const std::byte> m_EncoderIdentity;
+    RHIComputePipelineSpecification m_Shader;
     Ref<RHIComputeResource> m_Input;
     Ref<RHIComputeResource> m_Output;
+    std::size_t m_OutputCapacity = 0;
     Ref<RHIComputeReadback> m_Readback;
 };
 

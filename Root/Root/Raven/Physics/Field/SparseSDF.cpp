@@ -215,8 +215,6 @@ bool SparseSDFUpdater::BeginUpdate(const DenseSDFSource& source, const DenseSDFG
     next->m_Signed = source.GetMode() != DenseSDFSource::Mode::UnsignedMesh;
     next->m_Support = support;
     next->m_Generation = m_Snapshot == nullptr ? 1 : m_Snapshot->m_Generation + 1;
-    m_NextSource = source;
-    m_NextCandidates = BuildCandidates(source, grid, support);
     const bool compatible = m_Snapshot != nullptr && SameGrid(grid, m_Snapshot->m_Grid) &&
         band == m_Snapshot->m_Band && source.GetMode() == m_Source->GetMode();
     const auto vertices = source.GetTriangleVertices();
@@ -224,13 +222,23 @@ bool SparseSDFUpdater::BeginUpdate(const DenseSDFSource& source, const DenseSDFG
     const bool identical = compatible && source.GetCenter() == m_Source->GetCenter() &&
         source.GetRadius() == m_Source->GetRadius() &&
         std::equal(vertices.begin(), vertices.end(), oldVertices.begin(), oldVertices.end());
+    if (identical)
+    {
+        // タイル本体と候補の空間分類は不変。世代だけ進め、候補再走査と GPU 更新を省く。
+        next->m_Tiles = m_Snapshot->m_Tiles;
+        m_Source = source;
+        m_Snapshot = std::move(next);
+        return true;
+    }
+    m_NextSource = source;
+    m_NextCandidates = BuildCandidates(source, grid, support);
     const auto topology = source.GetTriangleIndices();
     const auto oldTopology = compatible ? m_Source->GetTriangleIndices() : std::span<const DenseSDFSource::Triangle>{};
     const bool signedEdit = compatible && source.GetMode() == DenseSDFSource::Mode::ClosedMesh &&
         std::equal(topology.begin(), topology.end(), oldTopology.begin(), oldTopology.end());
     struct TileRange { RHIComputeExtent First; RHIComputeExtent Last; };
     std::vector<TileRange> sweptTiles;
-    if (signedEdit && identical == false)
+    if (signedEdit)
     {
         for (std::size_t i = 0; i < vertices.size(); i += 3)
         {
@@ -262,8 +270,8 @@ bool SparseSDFUpdater::BeginUpdate(const DenseSDFSource& source, const DenseSDFG
     }
     for (const auto& [tile, triangles] : m_NextCandidates)
     {
-        bool reuse = identical;
-        if (signedEdit && identical == false)
+        bool reuse = false;
+        if (signedEdit)
         {
             const auto old = m_Candidates.find(tile);
             reuse = old != m_Candidates.end() && old->second == triangles &&
@@ -353,24 +361,38 @@ bool SparseSDFUpdater::PrepareBatch(RHIComputeCommandEncoder& encoder,
     shader.LocalSize = {Width, Width, Width};
     shader.Layout = {{0, RHIComputeBindingType::StorageBuffer, RHIComputeAccess::Read},
         {1, RHIComputeBindingType::StorageBuffer, RHIComputeAccess::Write}};
-    auto pipeline = m_Pipeline != nullptr ? m_Pipeline : encoder.CreatePipeline(shader);
+    const auto identity = encoder.GetIdentity().lock();
+    const bool sameEncoder = m_EncoderIdentity.lock() == identity;
+    if (m_NextTile != 0 && (sameEncoder == false || m_Shader != shader))
+    {
+        // 1 世代のタイルは同じ Backend と Shader の結果だけで構成する。
+        return false;
+    }
+    auto pipeline = m_Pipeline != nullptr && sameEncoder && m_Shader == shader
+        ? m_Pipeline : encoder.CreatePipeline(shader);
     auto parameters = encoder.CreateStorageBuffer(input.size() * sizeof(Word), input.data());
-    auto output = encoder.CreateStorageBuffer(count * sizeof(Snapshot::Tile), nullptr);
+    const auto bytes = count * sizeof(Snapshot::Tile);
+    const bool reuseOutput = sameEncoder && m_Output != nullptr && bytes <= m_OutputCapacity;
+    // 前 Batch の Readback が Ready を返してから同じ Buffer を上書きする。
+    auto output = reuseOutput ? m_Output : encoder.CreateStorageBuffer(bytes, nullptr);
     if (pipeline == nullptr || parameters == nullptr || output == nullptr)
     {
         return false;
     }
     m_Pipeline = std::move(pipeline);
+    m_EncoderIdentity = identity;
+    m_Shader = std::move(shader);
     m_Input = std::move(parameters);
     m_Output = std::move(output);
+    m_OutputCapacity = reuseOutput ? m_OutputCapacity : bytes;
     m_BatchTiles = count;
-    m_BatchBytes = input.size() * sizeof(Word) + count * sizeof(Snapshot::Tile);
+    m_BatchBytes = input.size() * sizeof(Word) + m_OutputCapacity;
     return true;
 }
 
 bool SparseSDFUpdater::RecordBatch(RHIComputeCommandEncoder& encoder)
 {
-    if (m_BatchTiles == 0 || m_Readback != nullptr)
+    if (m_BatchTiles == 0 || m_Readback != nullptr || m_EncoderIdentity.lock() != encoder.GetIdentity().lock())
     {
         return false;
     }
@@ -421,7 +443,6 @@ void SparseSDFUpdater::ResetBatch()
 {
     m_Readback.reset();
     m_Input.reset();
-    m_Output.reset();
     m_BatchTiles = 0;
     m_BatchBytes = 0;
 }
@@ -431,13 +452,22 @@ void SparseSDFUpdater::Publish()
     m_Snapshot = std::move(m_Staged);
     m_Source = std::move(m_NextSource);
     m_Candidates = std::move(m_NextCandidates);
-    Cancel();
+    ResetUpdate();
 }
 
 void SparseSDFUpdater::Cancel()
 {
-    ResetBatch();
+    ResetUpdate();
     m_Pipeline.reset();
+    m_EncoderIdentity.reset();
+    m_Shader = {};
+}
+
+void SparseSDFUpdater::ResetUpdate()
+{
+    ResetBatch();
+    m_Output.reset();
+    m_OutputCapacity = 0;
     m_Staged.reset();
     m_NextSource.reset();
     m_NextCandidates.clear();

@@ -456,13 +456,64 @@ foreach ($name in @('DenseSDF', 'SparseSDF')) {
 
 ### Phase 10 — 計測・最適化・正式統合
 
-- [ ] GPU Timestamp、Dispatch数、メモリ使用量、Readback待機を計測。
-- [ ] Descriptor / Pipeline / Buffer 再利用、Sparse更新を最適化。
-- [ ] 3 Backend、既存 Scene、Physics / Thermal / UI の回帰テスト。
-- [ ] Debug / Release ビルド、GPU Validation、長時間動作を検証。
-- [ ] API使用例、デモ、トラブルシュート、測定結果を文書化。
+- [x] GPU Timestamp、Dispatch数、メモリ使用量、Readback待機を計測。
+- [x] Descriptor / Pipeline / Buffer 再利用、Sparse更新を最適化。
+- [x] 3 Backend、既存 Scene、Physics / Thermal / UI の回帰テスト。
+- [x] Debug / Release ビルドと GPU Validation を検証。
+- [ ] 長時間動作の検証（今回の対象外）。
+- [x] API使用例、デモ、トラブルシュート、測定結果を文書化。
 
 **完了条件**: 正確性・性能・リソース寿命の基準を満たし、既存機能の重大な回帰がない。
+
+
+#### Phase 10 の計測と再利用
+
+- `RHIComputeCommandEncoder::MeasureGpuWork` は記録する処理を 1 回呼び出し、GPU Timestamp の Ticket を返す。OpenGL では同じ Context で Query の利用可否を Poll する。DirectX 12 / Vulkan は Explicit Frame の Fence 完了後に結果を取り出す。非対応の場合は処理の記録を続け、Ticket は空になる。
+- Timestamp の区間は指定した Compute 記録。SDF 計測は Dispatch・Barrier・Readback Copy を含む。ホスト側の Readback 観測時間は Copy の要求から Ready を観測するまでで、Explicit Backend では Frame 提出・完了通知、OpenGL では Poll の間隔も含む。GPU 計測値と独立に記録する。
+- `GetStatistics()` は Encoder ごとの累積カウンター。Buffer / R32F Texture / Readback の Bytes はそれぞれの論理ペイロード量。ドライバのアラインメント、配置、常駐量、Upload Buffer、Timestamp の内部資源は対象外。
+- DirectX 12 / Vulkan は、該当 Frame が保持する変更されない Descriptor を同一 Binding の Dispatch で共有する。Render Pass へ入る前に記録し、GPU の完了まで旧 Descriptor / Resource を保持する。
+- Dense / Sparse SDF は同一 Encoder と同一 Shader 指定の Pipeline を共有する。Dense の出力は Prepare ごとに作り、既存 Texture の参照先を上書きしない。Sparse の出力 Buffer は同一更新内で Readback 完了後に再利用し、未変更の入力では候補タイル再構築を省く。局所編集では既存の dirty tile 判定を維持する。
+
+#### API の利用例
+
+```cpp
+auto timestamp = Raven::CreateRef<Raven::Ref<Raven::RHIComputeTimestamp>>();
+auto samples = Raven::CreateRef<Raven::Ref<Raven::RHIComputeReadback>>();
+const auto record = [generator, timestamp, samples](Raven::RHIComputeCommandEncoder& commands)
+{
+    return commands.MeasureGpuWork([&](auto& measured)
+    {
+        *samples = generator->Record(measured);
+        return *samples != nullptr;
+    }, *timestamp);
+};
+```
+
+同一 Encoder で `generator->Prepare` を済ませてから、OpenGL は同じ Context で `record(*encoder)` を呼ぶ。DX12 / Vulkan は `encoder->QueueFrame(record)` で予約し、Frame を提出して完了を観測する。両 Ticket の `Poll` が Ready になってから値を使う。CPU への距離取得が不要な場合は `DenseSDFGenerator::RecordTexture` を使う。
+
+#### 短時間の検証とトラブルシュート
+
+- Phase 04〜06 のコマンドで Compute・Dense SDF・Sparse SDF のバイナリ Shader を生成し、Debug x64 の `RavenUIGPUTest=true` をビルドする。作業ディレクトリを `Root/Root` にして、`RavenUIGPUTests.exe --opengl-compute`、`--dx12-compute`、`--vulkan-compute`、`--dense-sdf=<backend>`、`--sparse-sdf=<backend>` を実行する。SDF の Backend 名は `opengl`、`dx12`、`vulkan`。GPU Validation の環境変数は Phase 04 の手順と同じ。
+- `Root.exe --gpu-sdf-fluid-demo` で OpenGL の粒子と SDF 断面を表示する。`--test-gpu-sdf-fluid` と `--test-thermal-grid` は短時間の回帰に使う。OpenGL Context 作成が失敗する場合は、GPU が利用できるデスクトップセッションで実行する。
+- Shader パスのエラーでは実行時の作業ディレクトリと `Root/Tests/x64/ComputeShaders` の生成物を確認する。Timestamp が Pending のときは Frame の完了通知または GL Context の実行状況を確認する。空の Ticket はデバイスの対応状況を確認する。Sparse の公開世代は全 Batch の完了後に進む。
+
+
+
+#### 短時間の測定結果
+
+Windows / RTX 3080 の Debug x64 で実行した。各時間は一回の検証実行の観測値。特にホスト側時間は Frame 完了通知、検証レイヤー、ポーリング間隔の影響を受ける。
+
+| Backend | Compute GPU 時間 (µs) | Compute Readback 観測 (µs) | 閉じた箱 Dense / Sparse GPU 時間 (µs) | 閉じた箱 Dense / Sparse Readback 観測 (µs) |
+| --- | ---: | ---: | ---: | ---: |
+| OpenGL | 13.3 | 161 | 338 / 119 | 7,859 / 45,643 |
+| DirectX 12 | 68.0 | 89,614 | 238 / 112 | 4,224 / 13,142 |
+| Vulkan | 22.3 | 27,870 | 444 / 110 | 10,833 / 42,270 |
+
+- DX12 / Vulkan の Compute は 6 Dispatch、Descriptor 確保 4 回・再利用 2 回。従来の毎 Dispatch 確保では同じ記録列で 6 回確保する。計測した論理確保量は Buffer 76 B、Texture 64 B、Readback 152 B。OpenGL は 2 Dispatch、Buffer 76 B、Texture 32 B、Readback 76 B。
+- Dense SDF の 6 ケースで Pipeline 確保は 6 回から 1 回。3 Backend とも Buffer 360,928 B、Texture 359,248 B を確保し、数値比較と断面生成に合格した。
+- Sparse SDF の局所編集は符号あり・なしとも 225 タイル中 125 タイルを更新した。同じ 8 Batch の条件で Storage Buffer 確保は 16 回から 9 回、編集時の Pipeline 確保は 1 回から 0 回。変更前の確保数は同じ操作列に対する実装上の回数。未変更入力の再公開は 0 Dispatch。閉じた箱の初回生成は累積 Storage Buffer 49,472 B、ピーク論理ペイロード 26,960 B、CPU の公開ペイロード 53,600 B。
+- Debug / Release x64、Debug GPU 統合構成、3 Backend の Compute / Dense / Sparse、既存 Scene / Physics / Thermal / UI、OpenGL 流体・熱連携が通過した。DX12 GPU-Based Validation と Vulkan 同期検証で対象の Validation error は 0 件。Vulkan SDK のレイヤー設定 `khronos_validation.validate_sync = true` を使用し、Loader ログでレイヤー挿入を確認した。
+
 
 ## 5. 依存関係と並行可能な作業
 

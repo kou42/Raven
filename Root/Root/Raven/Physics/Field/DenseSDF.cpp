@@ -261,7 +261,11 @@ bool DenseSDFGenerator::Prepare(RHIComputeCommandEncoder& encoder, RHIComputePip
     shader.Layout = {{0, RHIComputeBindingType::StorageBuffer, RHIComputeAccess::Read},
         {1, RHIComputeBindingType::StorageBuffer, RHIComputeAccess::Write},
         {2, RHIComputeBindingType::StorageImage3D, RHIComputeAccess::Write}};
-    auto pipeline = encoder.CreatePipeline(shader);
+    // 以前の Frame が参照している Texture/Buffer は保持されたまま、新しい出力を作る。
+    // Pipeline は不変なので、同じ Encoder と Shader の場合のみ共有できる。
+    const auto identity = encoder.GetIdentity().lock();
+    auto pipeline = m_Pipeline != nullptr && m_EncoderIdentity.lock() == identity && m_Shader == shader
+        ? m_Pipeline : encoder.CreatePipeline(shader);
     auto parameters = encoder.CreateStorageBuffer(input.size() * sizeof(ShaderWord), input.data());
     auto distances = encoder.CreateStorageBuffer(voxels * sizeof(float), nullptr);
     auto texture = encoder.CreateStorageImage3D(grid.Size);
@@ -270,6 +274,8 @@ bool DenseSDFGenerator::Prepare(RHIComputeCommandEncoder& encoder, RHIComputePip
         return false;
     }
     m_Pipeline = std::move(pipeline);
+    m_EncoderIdentity = identity;
+    m_Shader = std::move(shader);
     m_Input = std::move(parameters);
     m_Distances = std::move(distances);
     m_Texture = std::move(texture);

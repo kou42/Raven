@@ -144,18 +144,24 @@ bool VerifyCompute()
     const auto buffer = encoder->CreateStorageBuffer(sizeof(values), values.data());
     const auto image = encoder->CreateStorageImage3D({2, 2, 2});
     const RHIComputeBinding bindings[] = {{0, buffer}, {1, image}};
+    Ref<RHIComputeTimestamp> timestamp;
+    const auto record = [&](RHIComputeCommandEncoder& commands)
+    {
+        return commands.Dispatch(pipeline, bindings, {3, 1, 1}) &&
+            commands.Barrier(RHIComputeConsumer::Storage) &&
+            commands.Dispatch(pipeline, bindings, {3, 1, 1});
+    };
     if (Check(pipeline != nullptr && buffer != nullptr && image != nullptr, "GL Compute resources") == false ||
         Check(encoder->Dispatch(pipeline, bindings, {0, 1, 1}) == false, "zero Dispatch rejected") == false ||
         Check(encoder->RequestBufferReadback(buffer, sizeof(values), 1) == nullptr, "out-of-range copy rejected") == false ||
-        Check(encoder->Dispatch(pipeline, bindings, {3, 1, 1}), "first Compute Dispatch") == false ||
-        Check(encoder->Barrier(RHIComputeConsumer::Storage), "Compute-to-Compute barrier") == false ||
-        Check(encoder->Dispatch(pipeline, bindings, {3, 1, 1}), "second Compute Dispatch") == false ||
+        Check(encoder->MeasureGpuWork(record, timestamp), "Compute dispatch and GPU timestamp") == false ||
         Check(encoder->Barrier(RHIComputeConsumer::TextureSampling), "Compute-to-Graphics barrier") == false ||
         Check(VerifyDraw(image), "3D Compute image sampled by fragment shader") == false ||
         Check(encoder->Barrier(RHIComputeConsumer::BufferReadback), "Compute-to-Readback barrier") == false)
     {
         return false;
     }
+    const auto requested = std::chrono::steady_clock::now();
     const auto ticket = encoder->RequestBufferReadback(buffer, 0, sizeof(values));
     if (Check(ticket != nullptr, "queued GPU-to-CPU buffer copy") == false)
     {
@@ -174,6 +180,25 @@ bool VerifyCompute()
         state = ticket->Poll(bytes);
     }
     if (Check(state == RHIComputeReadbackStatus::Ready && bytes.size() == sizeof(values), "Readback completion") == false)
+    {
+        return false;
+    }
+    const double readbackTime = std::chrono::duration<double, std::micro>(
+        std::chrono::steady_clock::now() - requested).count();
+    double nanoseconds = 0.0;
+    const auto stats = encoder->GetStatistics();
+    auto timestampStatus = timestamp != nullptr ? timestamp->Poll(nanoseconds) : RHIComputeReadbackStatus::Failed;
+    while (timestampStatus == RHIComputeReadbackStatus::Pending && std::chrono::steady_clock::now() < deadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        timestampStatus = timestamp->Poll(nanoseconds);
+    }
+    std::cout << "opengl compute gpuUs=" << nanoseconds / 1000.0 << " readbackUs=" << readbackTime
+        << " dispatches=" << stats.Dispatches << " bufferBytes=" << stats.BufferBytes
+        << " imageBytes=" << stats.ImageBytes << " readbackBytes=" << stats.ReadbackBytes << '\n';
+    if (Check(timestampStatus == RHIComputeReadbackStatus::Ready, "OpenGL GPU timestamp available") == false ||
+        Check(stats.Dispatches == 2 && stats.Pipelines == 1 && stats.Buffers == 1 && stats.Images == 1 &&
+            stats.Readbacks == 1, "OpenGL resource counts") == false)
     {
         return false;
     }

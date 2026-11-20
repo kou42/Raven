@@ -251,6 +251,41 @@ bool ValidateProgramLayout(GLuint program, const std::vector<RHIComputeBindingLa
     return std::all_of(matched.begin(), matched.end(), [](bool found) { return found; });
 }
 
+struct OpenGLTimestamp final : RHIComputeTimestamp
+{
+    GLFWwindow* Context = nullptr;
+    GLuint Queries[2]{};
+    std::uint64_t Mask = ~std::uint64_t{0};
+
+    ~OpenGLTimestamp() override
+    {
+        if (glfwGetCurrentContext() == Context)
+        {
+            glDeleteQueries(2, Queries);
+        }
+    }
+
+    RHIComputeReadbackStatus Poll(double& nanoseconds) override
+    {
+        if (glfwGetCurrentContext() != Context)
+        {
+            return RHIComputeReadbackStatus::Failed;
+        }
+        GLint ready = GL_FALSE;
+        glGetQueryObjectiv(Queries[1], GL_QUERY_RESULT_AVAILABLE, &ready);
+        if (ready != GL_TRUE)
+        {
+            return RHIComputeReadbackStatus::Pending;
+        }
+        GLuint64 start = 0;
+        GLuint64 end = 0;
+        glGetQueryObjectui64v(Queries[0], GL_QUERY_RESULT, &start);
+        glGetQueryObjectui64v(Queries[1], GL_QUERY_RESULT, &end);
+        nanoseconds = static_cast<double>((end - start) & Mask);
+        return RHIComputeReadbackStatus::Ready;
+    }
+};
+
 class OpenGLComputeCommandEncoder final : public RHIComputeCommandEncoder
 {
 public:
@@ -301,7 +336,42 @@ public:
             std::cerr << "[OpenGL Compute] Workgroup size or binding layout mismatch\n";
             return nullptr;
         }
+        ++m_Statistics.Pipelines;
         return result;
+    }
+
+    bool MeasureGpuWork(const FrameRecorder& work, Ref<RHIComputeTimestamp>& timestamp) override
+    {
+        timestamp.reset();
+        if (IsCurrent() == false || glGetQueryiv == nullptr || glGenQueries == nullptr ||
+            glDeleteQueries == nullptr || glGetQueryObjectiv == nullptr || glQueryCounter == nullptr ||
+            glGetQueryObjectui64v == nullptr)
+        {
+            return work(*this);
+        }
+        GLint bits = 0;
+        glGetQueryiv(GL_TIMESTAMP, GL_QUERY_COUNTER_BITS, &bits);
+        if (bits <= 0)
+        {
+            return work(*this);
+        }
+        auto result = CreateRef<OpenGLTimestamp>();
+        result->Context = m_Context;
+        result->Mask = bits >= 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << bits) - 1;
+        glGenQueries(2, result->Queries);
+        if (result->Queries[0] == 0 || result->Queries[1] == 0)
+        {
+            return work(*this);
+        }
+        glQueryCounter(result->Queries[0], GL_TIMESTAMP);
+        const bool success = work(*this);
+        glQueryCounter(result->Queries[1], GL_TIMESTAMP);
+        glFlush();
+        if (success)
+        {
+            timestamp = std::move(result);
+        }
+        return success;
     }
 
     Ref<RHIComputeResource> CreateStorageBuffer(std::size_t size, const void* initialData) override
@@ -319,7 +389,13 @@ public:
         glBindBuffer(GL_COPY_WRITE_BUFFER, resource->Name);
         glBufferData(GL_COPY_WRITE_BUFFER, static_cast<GLsizeiptr>(size), initialData, GL_DYNAMIC_COPY);
         glBindBuffer(GL_COPY_WRITE_BUFFER, prior);
-        return resource->Name != 0 && glGetError() == GL_NO_ERROR ? resource : nullptr;
+        if (resource->Name == 0 || glGetError() != GL_NO_ERROR)
+        {
+            return nullptr;
+        }
+        ++m_Statistics.Buffers;
+        m_Statistics.BufferBytes += size;
+        return resource;
     }
 
     Ref<RHIComputeResource> CreateStorageImage3D(const RHIComputeExtent& size) override
@@ -342,7 +418,13 @@ public:
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
         glBindTexture(GL_TEXTURE_3D, prior);
-        return resource->Name != 0 && glGetError() == GL_NO_ERROR ? resource : nullptr;
+        if (resource->Name == 0 || glGetError() != GL_NO_ERROR)
+        {
+            return nullptr;
+        }
+        ++m_Statistics.Images;
+        m_Statistics.ImageBytes += static_cast<std::uint64_t>(size[0]) * size[1] * size[2] * sizeof(float);
+        return resource;
     }
 
     bool Dispatch(const Ref<RHIComputePipeline>& pipeline, std::span<const RHIComputeBinding> bindings,
@@ -397,7 +479,12 @@ public:
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, storageBuffer);
         glUseProgram(program);
         const bool restored = glGetError() == GL_NO_ERROR;
-        return bound && restored;
+        if (bound && restored)
+        {
+            ++m_Statistics.Dispatches;
+            return true;
+        }
+        return false;
     }
 
     bool Barrier(RHIComputeConsumer consumer) override
@@ -448,7 +535,13 @@ public:
         result->Fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
         glBindBuffer(GL_COPY_READ_BUFFER, priorRead);
         glBindBuffer(GL_COPY_WRITE_BUFFER, priorWrite);
-        return result->Fence != nullptr && glGetError() == GL_NO_ERROR ? result : nullptr;
+        if (result->Fence == nullptr || glGetError() != GL_NO_ERROR)
+        {
+            return nullptr;
+        }
+        ++m_Statistics.Readbacks;
+        m_Statistics.ReadbackBytes += size;
+        return result;
     }
 
 private:

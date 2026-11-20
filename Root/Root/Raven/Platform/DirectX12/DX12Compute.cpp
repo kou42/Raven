@@ -156,6 +156,57 @@ public:
     {
     }
 
+    bool MeasureGpuWork(const FrameRecorder& work, Ref<RHIComputeTimestamp>& timestamp) override
+    {
+        timestamp.reset();
+        auto* commands = GetCommands();
+        std::uint64_t frequency = 0;
+        if (commands == nullptr || m_Context.GetGraphicsTimestampFrequency(frequency) == false || frequency == 0)
+        {
+            return work(*this);
+        }
+        const D3D12_QUERY_HEAP_DESC description{ D3D12_QUERY_HEAP_TYPE_TIMESTAMP, 2, 0 };
+        ComPtr<ID3D12QueryHeap> heap;
+        if (FAILED(m_Device->CreateQueryHeap(&description, IID_PPV_ARGS(&heap))))
+        {
+            return work(*this);
+        }
+        constexpr auto size = sizeof(std::uint64_t) * 2;
+        auto staging = Allocate(*m_Device.Get(), BufferDescription(size, D3D12_RESOURCE_FLAG_NONE),
+            D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_STATE_COPY_DEST);
+        if (staging == nullptr)
+        {
+            return work(*this);
+        }
+
+        const auto result = CreateRef<RHICompletedComputeTimestamp>();
+        // Frame の完了通知まで Query Heap と resolve 先を保持する。
+        m_ActiveFrame->OnCompletion([result, heap, staging, frequency](bool completed) noexcept
+        {
+            std::uint64_t ticks[2]{};
+            const D3D12_RANGE read{ 0, sizeof(ticks) };
+            void* mapped = nullptr;
+            if (completed && SUCCEEDED(staging->Map(0, &read, &mapped)))
+            {
+                std::memcpy(ticks, mapped, sizeof(ticks));
+                const D3D12_RANGE written{};
+                staging->Unmap(0, &written);
+                result->Complete(true, static_cast<double>(ticks[1] - ticks[0]) * 1.0e9 / frequency);
+                return;
+            }
+            result->Complete(false, 0.0);
+        });
+        commands->EndQuery(heap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
+        const bool success = work(*this);
+        commands->EndQuery(heap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 1);
+        commands->ResolveQueryData(heap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0, 2, staging.Get(), 0);
+        if (success)
+        {
+            timestamp = result;
+        }
+        return success;
+    }
+
     bool QueueFrame(FrameRecorder recorder) override
     {
         if (recorder == nullptr || IsValid() == false)
@@ -230,6 +281,7 @@ public:
         {
             return nullptr;
         }
+        ++m_Statistics.Pipelines;
         return pipeline;
     }
 
@@ -259,7 +311,13 @@ public:
         resource->Native = Allocate(*m_Device.Get(),
             BufferDescription(size, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS),
             D3D12_HEAP_TYPE_DEFAULT, resource->State);
-        return resource->Native != nullptr ? resource : nullptr;
+        if (resource->Native == nullptr)
+        {
+            return nullptr;
+        }
+        ++m_Statistics.Buffers;
+        m_Statistics.BufferBytes += size;
+        return resource;
     }
 
     Ref<RHIComputeResource> CreateStorageImage3D(const RHIComputeExtent& size) override
@@ -282,7 +340,13 @@ public:
         resource->Owner = m_Owner;
         resource->Type = RHIComputeBindingType::StorageImage3D;
         resource->Native = Allocate(*m_Device.Get(), description, D3D12_HEAP_TYPE_DEFAULT, resource->State);
-        return resource->Native != nullptr ? resource : nullptr;
+        if (resource->Native == nullptr)
+        {
+            return nullptr;
+        }
+        ++m_Statistics.Images;
+        m_Statistics.ImageBytes += static_cast<std::uint64_t>(size[0]) * size[1] * size[2] * sizeof(float);
+        return resource;
     }
 
     bool Dispatch(const Ref<RHIComputePipeline>& pipeline, std::span<const RHIComputeBinding> bindings,
@@ -312,9 +376,24 @@ public:
             }
             work->Bindings.push_back(resource);
         }
-        if (work->Bindings.empty() == false && PrepareDescriptors(*work) == false)
+        if (work->Bindings.empty() == false)
         {
-            return false;
+            // 同一の順序・Resource を指す Heap は不変。完了待ちの Frame も共有できる。
+            const auto cached = m_LastDescriptors.lock();
+            if (cached != nullptr && cached->Bindings == work->Bindings)
+            {
+                work = cached;
+                ++m_Statistics.DescriptorReuses;
+            }
+            else
+            {
+                if (PrepareDescriptors(*work) == false)
+                {
+                    return false;
+                }
+                m_LastDescriptors = work;
+                ++m_Statistics.DescriptorAllocations;
+            }
         }
         m_ActiveFrame->Retain(native);
         m_ActiveFrame->Retain(work);
@@ -344,6 +423,7 @@ public:
             commands->SetComputeRootDescriptorTable(0, work->Heap->GetGPUDescriptorHandleForHeapStart());
         }
         commands->Dispatch(groups[0], groups[1], groups[2]);
+        ++m_Statistics.Dispatches;
         return true;
     }
 
@@ -406,6 +486,8 @@ public:
         BeginBufferUse(*source);
         Transition(*commands, *source, D3D12_RESOURCE_STATE_COPY_SOURCE);
         commands->CopyBufferRegion(ticket->Staging.Get(), 0, source->Native.Get(), offset, size);
+        ++m_Statistics.Readbacks;
+        m_Statistics.ReadbackBytes += size;
         return ticket;
     }
 
@@ -463,6 +545,7 @@ private:
         return true;
     }
 
+    std::weak_ptr<DispatchResources> m_LastDescriptors;
     DX12SceneContext& m_Context;
     ComPtr<ID3D12Device> m_Device;
     RHIComputeCapabilities m_Caps;
