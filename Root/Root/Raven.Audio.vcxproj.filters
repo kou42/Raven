@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Raven" />
+    <Filter Include="Raven\Audio" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Raven\Audio\AudioService.cpp"><Filter>Raven\Audio</Filter></ClCompile>
+    <ClInclude Include="Raven\Audio\AudioService.h"><Filter>Raven\Audio</Filter></ClInclude>
+  </ItemGroup>
+</Project>

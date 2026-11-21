@@ -68,11 +68,9 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
+  <Import Project="Raven.Common.props" />
+  <Import Project="Raven.Root.Items.props" />
   <PropertyGroup Label="UserMacros">
-    <!-- Debugの数値Kernelだけを最適化し、_DEBUG / Debug CRT / assertは維持します。
-         通常Sceneでは未最適化Clothがfixed-step予算を超え、catch-upを連鎖させていました。
-         Kernel内部を逐次デバッグする場合は /p:RavenOptimizePhysicsInDebug=false で無効化できます。 -->
-    <RavenOptimizePhysicsInDebug Condition="'$(RavenOptimizePhysicsInDebug)'==''">true</RavenOptimizePhysicsInDebug>
     <!-- 通常アプリとUI回帰テストの中間生成物を分離し、mainの重複定義を防ぎます。 -->
     <RavenUITest Condition="'$(RavenUITest)'==''">false</RavenUITest>
     <RavenUIGPUTest Condition="'$(RavenUIGPUTest)'==''">false</RavenUIGPUTest>
@@ -89,15 +87,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
-      <SDLCheck>true</SDLCheck>
-      <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(ProjectDir)include;$(ProjectDir);$(VULKAN_SDK)\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp23</LanguageStandard>
-      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
-      <!-- Windows.h の min/max マクロが std::min/std::max と numeric_limits::max に干渉しないよう、全構成で無効化します。 -->
-      <!-- Raven containersはalignas(64)を含むため、MSVCの適合したextended alignment実装を明示的に選択します。 -->
-      <PreprocessorDefinitions>NOMINMAX;_ENABLE_EXTENDED_ALIGNED_STORAGE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <!-- GLFWはrepository同梱のheader/static libraryを同じversionで使用します。 -->
@@ -175,38 +165,36 @@
     <None Include="Raven\Assets\Shaders\GPUGridFluid.comp" />
     <None Include="Raven\Assets\Shaders\DenseSDF.comp;Raven\Assets\Shaders\DenseSDF.hlsl;Raven\Assets\Shaders\DenseSDF.inc" />
     <None Include="..\Tests\ComputeShaders\Smoke.hlsl;..\Tests\ComputeShaders\Smoke.comp;..\Tests\ComputeShaders\Smoke.vert;..\Tests\ComputeShaders\Smoke.frag" />
-    <ClCompile Include="src\glad.c" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <!-- Core/JsonParser.cppとData/Formats/Json/JsonParser.cppが同じJsonParser.objへ
-         出力されると片方が上書きされるため、両者の中間生成物名を明示します。 -->
-    <ClCompile Update="Raven\Core\JsonParser.cpp">
-      <ObjectFileName>$(IntDir)CoreJsonParser.obj</ObjectFileName>
-    </ClCompile>
-    <ClCompile Update="Raven\Data\Formats\Json\JsonParser.cpp">
-      <ObjectFileName>$(IntDir)DataJsonParser.obj</ObjectFileName>
-    </ClCompile>
-    <!-- CoreとDataのJSON Writerが同名objを上書きしないよう、出力先を分離します。 -->
-    <ClCompile Update="Raven\Core\JsonWriter.cpp">
-      <ObjectFileName>$(IntDir)CoreJsonWriter.obj</ObjectFileName>
-    </ClCompile>
-    <ClCompile Update="Raven\Data\Formats\Json\JsonWriter.cpp">
-      <ObjectFileName>$(IntDir)DataJsonWriter.obj</ObjectFileName>
-    </ClCompile>
+    <ClCompile Include="@(RavenRootSource)" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Raven\**\*.h" />
+    <ClInclude Include="@(RavenRootHeader)" />
   </ItemGroup>
-  <ItemGroup Condition="'$(Configuration)'=='Debug' and '$(RavenOptimizePhysicsInDebug)'=='true'">
-    <!-- 実測で支配的なPhysics KernelとFluid描画同期だけを最適化します。Scene / Testsは通常Debugのままです。
-         /O2と両立しない/RTC、Edit and ContinueをこのKernelだけ外し、PDBと浮動小数点精度は維持します。 -->
-    <ClCompile Update="Raven\Physics\SoftBody\SoftBodySolver.cpp;Raven\Physics\SoftBody\SoftBodyIntegratedStep.cpp;Raven\Physics\SoftBody\SoftBodyTriangleSpatialHashGrid.cpp;Raven\Physics\SoftBody\SoftBodySpatialHashGrid.cpp;Raven\Physics\Particle\ParticleSpatialHashGrid.cpp;Raven\Physics\Fluid\SPHSolver.cpp;Raven\Physics\Fluid\FluidSpatialHashGrid.cpp;Raven\Physics\Fluid\Debug\FluidSPHDemoLayer.cpp;Raven\Physics\Coupling\FluidColliderContact.cpp;Raven\Physics\Coupling\FluidStaticColliderCoupling.cpp;Raven\Physics\Coupling\FluidRigidBodyCoupling.cpp;Raven\Physics\Solver\ContactSolver.cpp;Raven\Renderer\Mesh\Mesh.cpp">
-      <Optimization>MaxSpeed</Optimization>
-      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
-      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
-      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <SupportJustMyCode>false</SupportJustMyCode>
-      <FloatingPointModel>Precise</FloatingPointModel>
-    </ClCompile>
+  <ItemGroup>
+    <ProjectReference Include="Raven.Foundation.vcxproj">
+      <Project>{A0D125DB-5A28-40F8-B708-7A6BE562D9EE}</Project>
+    </ProjectReference>
+    <ProjectReference Include="Raven.Data.vcxproj">
+      <Project>{1DF308F7-8C6E-47D1-904E-4952E29C35D4}</Project>
+    </ProjectReference>
+    <ProjectReference Include="Raven.Network.vcxproj">
+      <Project>{B5F20457-33C2-4CDB-A596-569357CC9D0F}</Project>
+    </ProjectReference>
+    <ProjectReference Include="Raven.Diagnostics.vcxproj">
+      <Project>{5532BA34-AF63-4538-B4A9-8A7C275EDEF7}</Project>
+    </ProjectReference>
+    <ProjectReference Include="Raven.Runtime.vcxproj">
+      <Project>{E91B1225-A20D-4431-A920-A9087C649660}</Project>
+    </ProjectReference>
+    <ProjectReference Include="Raven.Editor.vcxproj">
+      <Project>{F3BE1712-8D87-45BF-8DA2-07E172EA7357}</Project>
+    </ProjectReference>
+    <ProjectReference Include="Raven.Graphics.vcxproj">
+      <Project>{02FCF5E2-448C-413D-B362-3C33E362C6FE}</Project>
+    </ProjectReference>
+    <ProjectReference Include="Raven.Audio.vcxproj">
+      <Project>{DE96AC56-1E29-4612-A159-7A7988F74A23}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
@@ -225,8 +213,6 @@
     <None Include="Raven\Assets\Shaders\Vertex\test.vert" />
     <None Include="Raven\Assets\Shaders\Vertex\texture_test.vert" />
     <None Include="Raven\Diagnostics\Tests\README.md" />
-    <None Include="Raven\Diagnostics\Messages.json" />
-    <None Include="Raven\Diagnostics\Messages.lock.json" />
     <None Include="Raven\Data\Tests\README.md" />
     <None Include="Raven\Data\Tests\PHASE9_EDITING.md" />
     <None Include="Raven\Data\Tests\PHASE10_BINARY_ASSETS.md" />
@@ -241,23 +227,6 @@
     <None Include="Raven\Data\Tests\Phase8Time.csv" />
     <None Include="Raven\Data\Tests\Phase8Memory.csv" />
     <None Include="Raven\Data\Tests\StructuredDataTestAsset.v1.json" />
-    <None Include="Raven\Data\Serialization\Serialization.inl" />
-    <None Include="Raven\Data\Serialization\ParallelDeserialize.inl" />
-    <None Include="Raven\Core\Containers\Vector.inl" />
-    <None Include="Raven\Core\Containers\SmallVector.inl" />
-    <None Include="Raven\Core\Containers\FixedVector.inl" />
-    <None Include="Raven\Core\Containers\FlatHashSet.inl" />
-    <None Include="Raven\Core\Containers\FlatHashMap.inl" />
-    <None Include="Raven\Core\Containers\Span.inl" />
-    <None Include="Raven\Core\Containers\Array.inl" />
-    <None Include="Raven\Core\Containers\RingBuffer.inl" />
-    <None Include="Raven\Core\Containers\BitSet.inl" />
-    <None Include="Raven\Core\Containers\HandlePool.inl" />
-    <None Include="Raven\Core\Containers\SparseSet.inl" />
-    <None Include="Raven\Physics\Collision\BroadPhase.inl" />
-    <None Include="Raven\Scene\ComponentStorage.inl" />
-    <None Include="Raven\Scene\Scene.inl" />
-    <None Include="Raven\Editor\Command\DeleteEntityCommand.inl" />
     <None Include="..\Tests\SceneStorageTests.cpp" />
     <None Include="..\Tests\TransformMathTests.cpp" />
   </ItemGroup>
@@ -292,9 +261,5 @@
   <Target Name="CompileVulkanSceneShaders" BeforeTargets="ClCompile" Inputs="@(VulkanSceneShader)" Outputs="@(VulkanSceneShader->'%(FullPath).spv')">
     <Error Condition="'$(VULKAN_SDK)' == '' Or !Exists('$(VULKAN_SDK)\Bin\glslc.exe')" Text="Vulkan SDKのglslc.exeが見つかりません。VULKAN_SDK環境変数とSDKのインストールを確認してください。" />
     <Exec Command="&quot;$(VULKAN_SDK)\Bin\glslc.exe&quot; &quot;%(VulkanSceneShader.FullPath)&quot; -o &quot;%(VulkanSceneShader.FullPath).spv&quot;" />
-  </Target>
-  <!-- Metadataはレビュー可能な生成済みファイルを管理し、ビルド時は陳腐化とID/Schemaを検証します。 -->
-  <Target Name="VerifyDiagnosticMessages" BeforeTargets="ClCompile">
-    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)..\..\scripts\generate-diagnostic-messages.ps1&quot; -Check" />
   </Target>
 </Project>

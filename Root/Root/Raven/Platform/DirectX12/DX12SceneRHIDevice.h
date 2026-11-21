@@ -6,7 +6,6 @@
 #include "DX12SceneRHIBuffer.h"
 #include "DX12SceneRHITexture.h"
 #include "Raven/Renderer/RHI/RHIDevice.h"
-#include "Raven/Scene/Scene.h"
 
 namespace Raven
 {
@@ -30,18 +29,6 @@ public:
 
     RHIComputeCapabilities QueryComputeCapabilities() const override;
     Ref<RHIComputeCommandEncoder> CreateComputeCommandEncoder() override;
-
-    // Vulkan側と同じScene入口で共有Meshを1回ずつ準備します。
-    // DX12のDraw Commandが揃うまでは描画自体は呼び出し側で行いません。
-    bool PrepareScene(Scene& scene)
-    {
-        if (m_Context.GetNativeDevice() == nullptr ||
-            m_Context.GetActiveCommandList() != nullptr)
-        {
-            return false;
-        }
-        return scene.PrepareRHIMeshes(*this);
-    }
 
     Ref<RHIBuffer> CreateBuffer(
         const RHIBufferSpecification& specification,

@@ -68,7 +68,7 @@ Data → Foundation
 
 Rootは、mainから直接利用するライブラリも必要に応じて参照する。公開ヘッダーのinclude関係と、リンクすべきライブラリの関係は同一ではない。
 
-トップレベルのDebugはWindows依存の開発支援機能として、当初はRuntimeまたは起動・開発支援側に残す。Foundationには入れない。`sample.cpp` は内容と利用有無を確認して所属を決める。
+トップレベルのDebugはWindows依存の開発支援機能として、当初はRuntimeまたは起動・開発支援側に残す。Foundationには入れない。空で参照のない `sample.cpp` と `sample.h` はM0で削除した。
 
 ## 4. マイルストーン
 
@@ -196,7 +196,7 @@ Rootは、mainから直接利用するライブラリも必要に応じて参照
 
 ### コンパイル対象と生成物
 
-- 現在の `Raven\**\*.cpp` はTests・Benchmarks・デモ・sampleも含む。移管時に所有元から必ず外す。
+- 現在の `Raven\**\*.cpp` はTests・Benchmarks・デモも含む。移管時に所有元から必ず外す。
 - 移行中のワイルドカードは除外を明示し、最終的には所有ファイル一覧をレビュー可能にする。
 - `.inl` は公開ヘッダーから参照する定義として管理し、独立した翻訳単位にしない。
 - Core/DataのJsonParser・JsonWriterにあるobj名の個別指定は、移管後の衝突有無を確認して扱う。
@@ -258,4 +258,14 @@ Rootは、mainから直接利用するライブラリも必要に応じて参照
 
 Ravenのリポジトリ指示に従い、実装するマイルストーンの開始前に、目的・対象ファイル・ビルドとテスト・完了条件・既知のリスクを提示して承認を得る。承認は計画全体の一括実行とはみなさず、完了報告後に次段階へ進む範囲を確認する。
 
-現時点では、このロードマップの作成のみを完了している。M0の再調査、プロジェクト追加、ソース変更、ビルド、テストは未実施である。
+M0の結果は [検証基準](RAVEN_PROJECT_ORGANIZATION_M0_BASELINE.md) と [構成別ソース一覧](RAVEN_PROJECT_ORGANIZATION_M0_SOURCES.csv) に記録した。
+
+M1の所有範囲とM0からの検証結果は [Foundationの切り出し](RAVEN_PROJECT_ORGANIZATION_M1_FOUNDATION.md) に記録した。
+
+M2の依存関係と検証結果は [Data・Network・Diagnosticsの切り出し](RAVEN_PROJECT_ORGANIZATION_M2_SERVICES.md) に記録した。
+
+M3の所有範囲・起動入口と検証結果は [Runtime・Editor・起動入口の分離](RAVEN_PROJECT_ORGANIZATION_M3_RUNTIME_EDITOR.md) に記録した。
+
+M4の描画境界と検証結果は [Graphics・Runtimeの分離](RAVEN_PROJECT_ORGANIZATION_M4_GRAPHICS.md) に記録した。
+
+M5はAudioを対象にし、所有範囲と検証結果を [Audioの分離](RAVEN_PROJECT_ORGANIZATION_M5_AUDIO.md) に記録した。

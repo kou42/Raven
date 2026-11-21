@@ -77,7 +77,8 @@ public:
     // Cameraを必要としない旧Sandbox等の簡易描画用入口です。
     // Camera Contextは無効化されるため、Camera依存のDebug描画は実行されません。
     static void BeginScene();
-    static void EndScene();
+    // Debug描画は呼び出し元が同期的に渡し、Rendererはコールバックを保持しません。
+    static void EndScene(void (*drawDebugOverlay)() = nullptr);
 
     // Explicit RuntimeではEndScene時にLegacy描画せず、QueueをPrepareFrameまで保持します。
     static void SetExplicitSceneMode(bool enabled);

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Raven" />
+    <Filter Include="Raven\Diagnostics" />
+    <Filter Include="Raven\Diagnostics\Generated" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Raven\Diagnostics\BinaryTrace.cpp"><Filter>Raven\Diagnostics</Filter></ClCompile>
+    <ClInclude Include="Raven\Diagnostics\BinaryTrace.h"><Filter>Raven\Diagnostics</Filter></ClInclude>
+    <ClCompile Include="Raven\Diagnostics\DiagnosticAPI.cpp"><Filter>Raven\Diagnostics</Filter></ClCompile>
+    <ClInclude Include="Raven\Diagnostics\DiagnosticAPI.h"><Filter>Raven\Diagnostics</Filter></ClInclude>
+    <ClCompile Include="Raven\Diagnostics\DiagnosticCollector.cpp"><Filter>Raven\Diagnostics</Filter></ClCompile>
+    <ClInclude Include="Raven\Diagnostics\DiagnosticCollector.h"><Filter>Raven\Diagnostics</Filter></ClInclude>
+    <ClCompile Include="Raven\Diagnostics\DiagnosticEventStore.cpp"><Filter>Raven\Diagnostics</Filter></ClCompile>
+    <ClInclude Include="Raven\Diagnostics\DiagnosticEventStore.h"><Filter>Raven\Diagnostics</Filter></ClInclude>
+    <ClCompile Include="Raven\Diagnostics\DiagnosticMeasurement.cpp"><Filter>Raven\Diagnostics</Filter></ClCompile>
+    <ClInclude Include="Raven\Diagnostics\DiagnosticMeasurement.h"><Filter>Raven\Diagnostics</Filter></ClInclude>
+    <ClCompile Include="Raven\Diagnostics\DiagnosticMessage.cpp"><Filter>Raven\Diagnostics</Filter></ClCompile>
+    <ClInclude Include="Raven\Diagnostics\DiagnosticMessage.h"><Filter>Raven\Diagnostics</Filter></ClInclude>
+    <ClCompile Include="Raven\Diagnostics\DiagnosticMetric.cpp"><Filter>Raven\Diagnostics</Filter></ClCompile>
+    <ClInclude Include="Raven\Diagnostics\DiagnosticMetric.h"><Filter>Raven\Diagnostics</Filter></ClInclude>
+    <ClCompile Include="Raven\Diagnostics\DiagnosticSink.cpp"><Filter>Raven\Diagnostics</Filter></ClCompile>
+    <ClInclude Include="Raven\Diagnostics\DiagnosticSink.h"><Filter>Raven\Diagnostics</Filter></ClInclude>
+    <ClCompile Include="Raven\Diagnostics\DiagnosticValidation.cpp"><Filter>Raven\Diagnostics</Filter></ClCompile>
+    <ClInclude Include="Raven\Diagnostics\DiagnosticValidation.h"><Filter>Raven\Diagnostics</Filter></ClInclude>
+    <ClCompile Include="Raven\Diagnostics\EventBuffer.cpp"><Filter>Raven\Diagnostics</Filter></ClCompile>
+    <ClInclude Include="Raven\Diagnostics\EventBuffer.h"><Filter>Raven\Diagnostics</Filter></ClInclude>
+    <ClCompile Include="Raven\Diagnostics\Generated\MessageMetadata.generated.cpp"><Filter>Raven\Diagnostics\Generated</Filter></ClCompile>
+    <ClInclude Include="Raven\Diagnostics\Generated\MessageMetadata.generated.h"><Filter>Raven\Diagnostics\Generated</Filter></ClInclude>
+    <ClCompile Include="Raven\Diagnostics\MeasurementTimeline.cpp"><Filter>Raven\Diagnostics</Filter></ClCompile>
+    <ClInclude Include="Raven\Diagnostics\MeasurementTimeline.h"><Filter>Raven\Diagnostics</Filter></ClInclude>
+    <ClCompile Include="Raven\Diagnostics\MessageDictionary.cpp"><Filter>Raven\Diagnostics</Filter></ClCompile>
+    <ClInclude Include="Raven\Diagnostics\MessageDictionary.h"><Filter>Raven\Diagnostics</Filter></ClInclude>
+    <ClCompile Include="Raven\Diagnostics\RemoteDiagnostics.cpp"><Filter>Raven\Diagnostics</Filter></ClCompile>
+    <ClInclude Include="Raven\Diagnostics\RemoteDiagnostics.h"><Filter>Raven\Diagnostics</Filter></ClInclude>
+    <ClCompile Include="Raven\Diagnostics\RemoteProtocol.cpp"><Filter>Raven\Diagnostics</Filter></ClCompile>
+    <ClInclude Include="Raven\Diagnostics\RemoteProtocol.h"><Filter>Raven\Diagnostics</Filter></ClInclude>
+    <None Include="Raven\Diagnostics\Messages.json"><Filter>Raven\Diagnostics</Filter></None>
+    <None Include="Raven\Diagnostics\Messages.lock.json"><Filter>Raven\Diagnostics</Filter></None>
+  </ItemGroup>
+</Project>

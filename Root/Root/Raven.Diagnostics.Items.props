@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- Rootとライブラリで同じ所有一覧を使う。 -->
+  <ItemGroup>
+    <RavenDiagnosticsSource Include="Raven\Diagnostics\BinaryTrace.cpp" />
+    <RavenDiagnosticsSource Include="Raven\Diagnostics\DiagnosticAPI.cpp" />
+    <RavenDiagnosticsSource Include="Raven\Diagnostics\DiagnosticCollector.cpp" />
+    <RavenDiagnosticsSource Include="Raven\Diagnostics\DiagnosticEventStore.cpp" />
+    <RavenDiagnosticsSource Include="Raven\Diagnostics\DiagnosticMeasurement.cpp" />
+    <RavenDiagnosticsSource Include="Raven\Diagnostics\DiagnosticMessage.cpp" />
+    <RavenDiagnosticsSource Include="Raven\Diagnostics\DiagnosticMetric.cpp" />
+    <RavenDiagnosticsSource Include="Raven\Diagnostics\DiagnosticSink.cpp" />
+    <RavenDiagnosticsSource Include="Raven\Diagnostics\DiagnosticValidation.cpp" />
+    <RavenDiagnosticsSource Include="Raven\Diagnostics\EventBuffer.cpp" />
+    <RavenDiagnosticsSource Include="Raven\Diagnostics\Generated\MessageMetadata.generated.cpp" />
+    <RavenDiagnosticsSource Include="Raven\Diagnostics\MeasurementTimeline.cpp" />
+    <RavenDiagnosticsSource Include="Raven\Diagnostics\MessageDictionary.cpp" />
+    <RavenDiagnosticsSource Include="Raven\Diagnostics\RemoteDiagnostics.cpp" />
+    <RavenDiagnosticsSource Include="Raven\Diagnostics\RemoteProtocol.cpp" />
+    <RavenDiagnosticsHeader Include="Raven\Diagnostics\BinaryTrace.h" />
+    <RavenDiagnosticsHeader Include="Raven\Diagnostics\DiagnosticAPI.h" />
+    <RavenDiagnosticsHeader Include="Raven\Diagnostics\DiagnosticCollector.h" />
+    <RavenDiagnosticsHeader Include="Raven\Diagnostics\DiagnosticEventStore.h" />
+    <RavenDiagnosticsHeader Include="Raven\Diagnostics\DiagnosticMeasurement.h" />
+    <RavenDiagnosticsHeader Include="Raven\Diagnostics\DiagnosticMessage.h" />
+    <RavenDiagnosticsHeader Include="Raven\Diagnostics\DiagnosticMetric.h" />
+    <RavenDiagnosticsHeader Include="Raven\Diagnostics\DiagnosticSink.h" />
+    <RavenDiagnosticsHeader Include="Raven\Diagnostics\DiagnosticValidation.h" />
+    <RavenDiagnosticsHeader Include="Raven\Diagnostics\EventBuffer.h" />
+    <RavenDiagnosticsHeader Include="Raven\Diagnostics\Generated\MessageMetadata.generated.h" />
+    <RavenDiagnosticsHeader Include="Raven\Diagnostics\MeasurementTimeline.h" />
+    <RavenDiagnosticsHeader Include="Raven\Diagnostics\MessageDictionary.h" />
+    <RavenDiagnosticsHeader Include="Raven\Diagnostics\RemoteDiagnostics.h" />
+    <RavenDiagnosticsHeader Include="Raven\Diagnostics\RemoteProtocol.h" />
+  </ItemGroup>
+</Project>

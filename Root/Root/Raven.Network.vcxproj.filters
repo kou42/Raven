@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Raven" />
+    <Filter Include="Raven\Network" />
+    <Filter Include="Raven\Network\Windows" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Raven\Network\ControlMessageCodec.cpp"><Filter>Raven\Network</Filter></ClCompile>
+    <ClInclude Include="Raven\Network\ControlMessageCodec.h"><Filter>Raven\Network</Filter></ClInclude>
+    <ClCompile Include="Raven\Network\ControlMessageReceiver.cpp"><Filter>Raven\Network</Filter></ClCompile>
+    <ClInclude Include="Raven\Network\ControlMessageReceiver.h"><Filter>Raven\Network</Filter></ClInclude>
+    <ClCompile Include="Raven\Network\Windows\WindowsControlStream.cpp"><Filter>Raven\Network\Windows</Filter></ClCompile>
+    <ClCompile Include="Raven\Network\Windows\WindowsTcpSocket.cpp"><Filter>Raven\Network\Windows</Filter></ClCompile>
+    <ClInclude Include="Raven\Network\Windows\WindowsTcpSocket.h"><Filter>Raven\Network\Windows</Filter></ClInclude>
+  </ItemGroup>
+</Project>

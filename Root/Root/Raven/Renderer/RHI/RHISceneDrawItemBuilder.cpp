@@ -48,18 +48,6 @@ std::vector<RHISceneDrawItem> RHISceneDrawItemBuilder::Build(
     return items;
 }
 
-std::vector<RHISceneDrawItem> RHISceneDrawItemBuilder::Build(
-    const SceneCamera& camera,
-    const std::vector<RHISceneMesh>& meshes,
-    const math::Mat4& clipCorrection)
-{
-    return Build(
-        camera.GetViewMatrix(),
-        camera.GetProjectionMatrix(),
-        meshes,
-        clipCorrection);
-}
-
 void RHISceneDrawItemBuilder::BuildInto(
     const math::Mat4& view,
     const math::Mat4& projection,

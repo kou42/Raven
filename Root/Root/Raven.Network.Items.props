@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- Rootとライブラリで同じ所有一覧を使う。 -->
+  <ItemGroup>
+    <RavenNetworkSource Include="Raven\Network\ControlMessageCodec.cpp" />
+    <RavenNetworkSource Include="Raven\Network\ControlMessageReceiver.cpp" />
+    <RavenNetworkSource Include="Raven\Network\Windows\WindowsControlStream.cpp" />
+    <RavenNetworkSource Include="Raven\Network\Windows\WindowsTcpSocket.cpp" />
+    <RavenNetworkHeader Include="Raven\Network\ControlMessageCodec.h" />
+    <RavenNetworkHeader Include="Raven\Network\ControlMessageReceiver.h" />
+    <RavenNetworkHeader Include="Raven\Network\Windows\WindowsTcpSocket.h" />
+  </ItemGroup>
+</Project>
