@@ -13,6 +13,33 @@ D:.
     +---Root
     |   |   .editorconfig
     |   |   main.cpp
+    |   |   Raven.Audio.Items.props
+    |   |   Raven.Audio.vcxproj
+    |   |   Raven.Audio.vcxproj.filters
+    |   |   Raven.Common.props
+    |   |   Raven.Graphics.Items.props
+    |   |   Raven.Graphics.vcxproj
+    |   |   Raven.Graphics.vcxproj.filters
+    |   |   Raven.Editor.Items.props
+    |   |   Raven.Editor.vcxproj
+    |   |   Raven.Editor.vcxproj.filters
+    |   |   Raven.Root.Items.props
+    |   |   Raven.Runtime.Items.props
+    |   |   Raven.Runtime.vcxproj
+    |   |   Raven.Runtime.vcxproj.filters
+    |   |   Raven.Data.Items.props
+    |   |   Raven.Data.vcxproj
+    |   |   Raven.Data.vcxproj.filters
+    |   |   Raven.Diagnostics.Items.props
+    |   |   Raven.Diagnostics.vcxproj
+    |   |   Raven.Diagnostics.vcxproj.filters
+    |   |   Raven.Library.props
+    |   |   Raven.Network.Items.props
+    |   |   Raven.Network.vcxproj
+    |   |   Raven.Network.vcxproj.filters
+    |   |   Raven.Foundation.Items.props
+    |   |   Raven.Foundation.vcxproj
+    |   |   Raven.Foundation.vcxproj.filters
     |   |   Root.code-workspace
     |   |   Root.vcxproj
     |   |   Root.vcxproj.filters
@@ -41,9 +68,6 @@ D:.
     |   |       glfw3.lib
     |   |
     |   +---Raven
-    |   |   |   sample.cpp
-    |   |   |   sample.h
-    |   |   |
     |   |   +---Animation
     |   |   |   |   AnimationClip.cpp
     |   |   |   |   AnimationClip.h
@@ -104,6 +128,7 @@ D:.
     |   |   |   |       AnimationDebugOverlayRenderer.h
     |   |   |   |       AnimationStateMachineGraphLayout.cpp
     |   |   |   |       AnimationStateMachineGraphLayout.h
+    |   |   |   |
     |   |   |   \---Tests
     |   |   |           BlendTreeRuntimeSelfTests.cpp
     |   |   |           BlendTreeRuntimeSelfTests.h
@@ -111,6 +136,7 @@ D:.
     |   |   |           PoseInertializerSelfTests.h
     |   |   |           SkeletalDeformationSelfTests.cpp
     |   |   |           SkeletalDeformationSelfTests.h
+    |   |   |
     |   |   +---Assets
     |   |   |   |   RHIShaderAsset.cpp
     |   |   |   |   RHIShaderAsset.h
@@ -128,18 +154,22 @@ D:.
     |   |   |   |           mountain1.png
     |   |   |   |           sample1.png
     |   |   |   |           sample2.png
+    |   |   |   |
     |   |   |   +---Models
     |   |   |   |   |   Terrain.glb
     |   |   |   |   |
     |   |   |   |   +---Human
     |   |   |   |   |       Raven_human_test.glb
     |   |   |   |   |       UAL1_Standard.glb
+    |   |   |   |   |
     |   |   |   |   \---Quaternius
     |   |   |   |           README.md
     |   |   |   |           UAL1_Standard.glb
+    |   |   |   |
     |   |   |   +---Profiles
     |   |   |   |       Quaternius_UAL1_Standard.json
     |   |   |   |       Raven_human_test.json
+    |   |   |   |
     |   |   |   +---Shaders
     |   |   |   |   |   DenseSDF.comp
     |   |   |   |   |   DenseSDF.hlsl
@@ -161,21 +191,26 @@ D:.
     |   |   |   |   |       UI.hlsl
     |   |   |   |   |       UI.ps.dxil
     |   |   |   |   |       UI.vs.dxil
+    |   |   |   |   |
     |   |   |   |   +---Fragment
     |   |   |   |   |       lit.frag
     |   |   |   |   |       test.frag
     |   |   |   |   |       texture_test.frag
+    |   |   |   |   |
     |   |   |   |   +---Glsl
     |   |   |   |   |       EntityPicking.glsl
     |   |   |   |   |       FlatColor.glsl
     |   |   |   |   |       SelectionOutline.glsl
     |   |   |   |   |       UI.glsl
+    |   |   |   |   |
     |   |   |   |   +---ShaderToy
     |   |   |   |   |       test.frag
+    |   |   |   |   |
     |   |   |   |   +---Vertex
     |   |   |   |   |       lit.vert
     |   |   |   |   |       test.vert
     |   |   |   |   |       texture_test.vert
+    |   |   |   |   |
     |   |   |   |   \---Vulkan
     |   |   |   |           EntityPicking.frag
     |   |   |   |           EntityPicking.frag.spv
@@ -190,12 +225,15 @@ D:.
     |   |   |   |           UI.frag.spv
     |   |   |   |           UI.vert
     |   |   |   |           UI.vert.spv
+    |   |   |   |
     |   |   |   \---Svg
     |   |   |           AnimatedRect.svg
     |   |   |           OpenPathStroke.svg
+    |   |   |
     |   |   +---Audio
     |   |   |       AudioService.cpp
     |   |   |       AudioService.h
+    |   |   |
     |   |   +---Character
     |   |   |   |   CharacterController.cpp
     |   |   |   |   CharacterController.h
@@ -214,6 +252,7 @@ D:.
     |   |   |   |       CharacterControllerDemoLocomotionRuntime.h
     |   |   |   |       CharacterLocomotionDebugOverlayLayer.h
     |   |   |   |       CharacterPositionDebugOverlayLayer.h
+    |   |   |   |
     |   |   |   \---Tests
     |   |   |           CharacterCapsuleCollisionSelfTests.cpp
     |   |   |           CharacterCeilingCollisionSelfTests.cpp
@@ -223,6 +262,7 @@ D:.
     |   |   |           CharacterPhysicsGroundQuerySelfTests.cpp
     |   |   |           CharacterRagdollRecoverySelfTests.cpp
     |   |   |           CharacterSprintLocomotionSelfTests.h
+    |   |   |
     |   |   +---Core
     |   |   |   |   Application.cpp
     |   |   |   |   Application.h
@@ -294,6 +334,7 @@ D:.
     |   |   |   |   |       FlatHashMapBenchmark.h
     |   |   |   |   |       FlatHashSetBenchmark.h
     |   |   |   |   |       NameBenchmark.h
+    |   |   |   |   |
     |   |   |   |   \---Tests
     |   |   |   |           FlatHashMapSelfTests.cpp
     |   |   |   |           FlatHashMapSelfTests.h
@@ -303,6 +344,7 @@ D:.
     |   |   |   |           NameSelfTests.h
     |   |   |   |           StringSelfTests.cpp
     |   |   |   |           StringSelfTests.h
+    |   |   |   |
     |   |   |   +---Jobs
     |   |   |   |   |   JobSystem.cpp
     |   |   |   |   |   JobSystem.h
@@ -310,6 +352,7 @@ D:.
     |   |   |   |   \---Tests
     |   |   |   |           JobSystemSelfTests.cpp
     |   |   |   |           JobSystemSelfTests.h
+    |   |   |   |
     |   |   |   +---Memory
     |   |   |   |   |   AllocationMeasurement.cpp
     |   |   |   |   |   AllocationMeasurement.h
@@ -332,10 +375,12 @@ D:.
     |   |   |   |   \---Tests
     |   |   |   |           MemoryAllocatorSelfTests.cpp
     |   |   |   |           MemoryAllocatorSelfTests.h
+    |   |   |   |
     |   |   |   \---Tests
     |   |   |           ExplicitSceneFrameSelfTests.cpp
     |   |   |           ExplicitSceneFrameSelfTests.h
     |   |   |           README.md
+    |   |   |
     |   |   +---Data
     |   |   |   |   DataDocument.cpp
     |   |   |   |   DataDocument.h
@@ -355,22 +400,26 @@ D:.
     |   |   |   |   +---Binary
     |   |   |   |   |       BinaryDocument.cpp
     |   |   |   |   |       BinaryDocument.h
+    |   |   |   |   |
     |   |   |   |   +---Json
     |   |   |   |   |       JsonParser.cpp
     |   |   |   |   |       JsonParser.h
     |   |   |   |   |       JsonWriter.cpp
     |   |   |   |   |       JsonWriter.h
+    |   |   |   |   |
     |   |   |   |   \---MessagePack
     |   |   |   |           MessagePackParser.cpp
     |   |   |   |           MessagePackParser.h
     |   |   |   |           MessagePackWriter.cpp
     |   |   |   |           MessagePackWriter.h
+    |   |   |   |
     |   |   |   +---Serialization
     |   |   |   |       ParallelDeserialize.h
     |   |   |   |       ParallelDeserialize.inl
     |   |   |   |       Serialization.cpp
     |   |   |   |       Serialization.h
     |   |   |   |       Serialization.inl
+    |   |   |   |
     |   |   |   \---Tests
     |   |   |           CompiledTestAsset.cpp
     |   |   |           CompiledTestAsset.h
@@ -392,11 +441,11 @@ D:.
     |   |   |           MutableDataDocumentTests.h
     |   |   |           ParallelDeserializeTests.cpp
     |   |   |           ParallelDeserializeTests.h
+    |   |   |           PHASE10_BINARY_ASSETS.md
+    |   |   |           Phase8Memory.csv
+    |   |   |           Phase8Time.csv
     |   |   |           PHASE8_MEASUREMENTS.md
     |   |   |           PHASE9_EDITING.md
-    |   |   |           PHASE10_BINARY_ASSETS.md
-    |   |   |           Phase8Time.csv
-    |   |   |           Phase8Memory.csv
     |   |   |           README.md
     |   |   |           SerializationTests.cpp
     |   |   |           SerializationTests.h
@@ -405,57 +454,62 @@ D:.
     |   |   |           StructuredDataTestAsset.h
     |   |   |           StructuredDataTestAsset.v1.json
     |   |   |           StructuredDataTestAssetTests.cpp
+    |   |   |
     |   |   +---Debug
-    |   |   |       BrowserDebugConfig.h
-    |   |   |       BrowserDebugServer.cpp
-    |   |   |       BrowserDebugServer.h
-    |   |   |       BrowserDebugViewer.cpp
-    |   |   |       BrowserDebugViewer.h
+    |   |   |   |   BrowserDebugConfig.h
+    |   |   |   |   BrowserDebugServer.cpp
+    |   |   |   |   BrowserDebugServer.h
+    |   |   |   |   BrowserDebugViewer.cpp
+    |   |   |   |   BrowserDebugViewer.h
+    |   |   |   |
+    |   |   |
     |   |   +---Diagnostics
-    |   |   |   |   RemoteDiagnostics.cpp
-    |   |   |   |   RemoteDiagnostics.h
-    |   |   |   |   RemoteProtocol.cpp
-    |   |   |   |   RemoteProtocol.h
     |   |   |   |   BinaryTrace.cpp
     |   |   |   |   BinaryTrace.h
-    |   |   |   |   DiagnosticMessage.cpp
-    |   |   |   |   DiagnosticMessage.h
-    |   |   |   |   MessageDictionary.cpp
-    |   |   |   |   MessageDictionary.h
-    |   |   |   |   Messages.json
-    |   |   |   |   Messages.lock.json
-    |   |   |   |   DiagnosticEventStore.cpp
-    |   |   |   |   DiagnosticEventStore.h
-    |   |   |   |   DiagnosticSink.cpp
-    |   |   |   |   DiagnosticSink.h
-    |   |   |   |   DiagnosticMetric.cpp
-    |   |   |   |   DiagnosticMetric.h
-    |   |   |   |   DiagnosticMeasurement.cpp
-    |   |   |   |   DiagnosticMeasurement.h
-    |   |   |   |   MeasurementTimeline.cpp
-    |   |   |   |   MeasurementTimeline.h
-    |   |   |   |   DiagnosticValidation.cpp
-    |   |   |   |   DiagnosticValidation.h
     |   |   |   |   DiagnosticAPI.cpp
     |   |   |   |   DiagnosticAPI.h
     |   |   |   |   DiagnosticCollector.cpp
     |   |   |   |   DiagnosticCollector.h
+    |   |   |   |   DiagnosticEventStore.cpp
+    |   |   |   |   DiagnosticEventStore.h
+    |   |   |   |   DiagnosticMeasurement.cpp
+    |   |   |   |   DiagnosticMeasurement.h
+    |   |   |   |   DiagnosticMessage.cpp
+    |   |   |   |   DiagnosticMessage.h
+    |   |   |   |   DiagnosticMetric.cpp
+    |   |   |   |   DiagnosticMetric.h
+    |   |   |   |   DiagnosticSink.cpp
+    |   |   |   |   DiagnosticSink.h
+    |   |   |   |   DiagnosticValidation.cpp
+    |   |   |   |   DiagnosticValidation.h
     |   |   |   |   EventBuffer.cpp
     |   |   |   |   EventBuffer.h
+    |   |   |   |   MeasurementTimeline.cpp
+    |   |   |   |   MeasurementTimeline.h
+    |   |   |   |   MessageDictionary.cpp
+    |   |   |   |   MessageDictionary.h
+    |   |   |   |   Messages.json
+    |   |   |   |   Messages.lock.json
+    |   |   |   |   RemoteDiagnostics.cpp
+    |   |   |   |   RemoteDiagnostics.h
+    |   |   |   |   RemoteProtocol.cpp
+    |   |   |   |   RemoteProtocol.h
     |   |   |   |
     |   |   |   +---Generated
     |   |   |   |       MessageMetadata.generated.cpp
     |   |   |   |       MessageMetadata.generated.h
+    |   |   |   |
     |   |   |   \---Tests
-    |   |   |           DiagnosticRemoteSelfTests.cpp
-    |   |   |           DiagnosticMessageSelfTests.cpp
     |   |   |           DiagnosticMeasurementSelfTests.cpp
+    |   |   |           DiagnosticMessageSelfTests.cpp
+    |   |   |           DiagnosticRemoteSelfTests.cpp
     |   |   |           DiagnosticSelfTests.cpp
     |   |   |           DiagnosticSelfTests.h
-    |   |   |           DiagnosticViewerSelfTests.cpp
-    |   |   |           DiagnosticSubsystemSelfTests.cpp
     |   |   |           DiagnosticSinkSelfTests.cpp
+    |   |   |           DiagnosticSubsystemSelfTests.cpp
+    |   |   |           DiagnosticViewerSelfTests.cpp
     |   |   |           README.md
+    |   |   |
     |   |   +---Editor
     |   |   |   |   EditorCamera.cpp
     |   |   |   |   EditorCamera.h
@@ -475,10 +529,10 @@ D:.
     |   |   |   |   EditorViewportGeometry.h
     |   |   |   |
     |   |   |   +---Command
-    |   |   |   |       DataDocumentEditCommand.cpp
-    |   |   |   |       DataDocumentEditCommand.h
     |   |   |   |       CreateEntityCommand.cpp
     |   |   |   |       CreateEntityCommand.h
+    |   |   |   |       DataDocumentEditCommand.cpp
+    |   |   |   |       DataDocumentEditCommand.h
     |   |   |   |       DeleteEntityCommand.cpp
     |   |   |   |       DeleteEntityCommand.h
     |   |   |   |       DeleteEntityCommand.inl
@@ -492,6 +546,7 @@ D:.
     |   |   |   |       SetPrimaryCameraCommand.h
     |   |   |   |       TransformCommand.cpp
     |   |   |   |       TransformCommand.h
+    |   |   |   |
     |   |   |   +---Panels
     |   |   |   |       AnimationDebugActions.cpp
     |   |   |   |       AnimationDebugActions.h
@@ -522,6 +577,7 @@ D:.
     |   |   |   |       StatisticsSnapshot.cpp
     |   |   |   |       StatisticsSnapshot.h
     |   |   |   |       StatisticsUISnapshot.cpp
+    |   |   |   |
     |   |   |   \---Tests
     |   |   |           DataDocumentEditCommandTests.cpp
     |   |   |           DataDocumentEditCommandTests.h
@@ -531,6 +587,7 @@ D:.
     |   |   |           EditorViewportGeometrySelfTests.h
     |   |   |           InspectorSnapshotSelfTests.cpp
     |   |   |           InspectorSnapshotSelfTests.h
+    |   |   |
     |   |   +---Gltf
     |   |   |   |   AccessorReader.cpp
     |   |   |   |   AccessorReader.h
@@ -582,6 +639,7 @@ D:.
     |   |   |   |       HumanSkinningDebugController.h
     |   |   |   |       HumanSkinningDebugLayer.cpp
     |   |   |   |       HumanSkinningDebugLayer.h
+    |   |   |   |
     |   |   |   \---Tests
     |   |   |           GltfAccessorSelfTests.cpp
     |   |   |           GltfAccessorSelfTests.h
@@ -589,6 +647,7 @@ D:.
     |   |   |           GltfNodeHierarchySelfTests.h
     |   |   |           GltfSkinAccessorSelfTests.cpp
     |   |   |           GltfSkinAccessorSelfTests.h
+    |   |   |
     |   |   +---Math
     |   |   |       Math.cpp
     |   |   |       Math.h
@@ -602,6 +661,7 @@ D:.
     |   |   |       MathVector.h
     |   |   |       TransformMath.cpp
     |   |   |       TransformMath.h
+    |   |   |
     |   |   +---Network
     |   |   |   |   ControlMessageCodec.cpp
     |   |   |   |   ControlMessageCodec.h
@@ -612,19 +672,21 @@ D:.
     |   |   |   |       ControlMessageBenchmarks.cpp
     |   |   |   |       ControlMessageTests.cpp
     |   |   |   |       ControlMessageTests.h
-    |   |   |   |       PHASE11_CONTROL_MESSAGES.md
-    |   |   |   |       PHASE11_MEASUREMENTS.md
     |   |   |   |       Phase11Memory.csv
     |   |   |   |       Phase11MemoryMetadata.json
     |   |   |   |       Phase11Time.csv
     |   |   |   |       Phase11TimeMetadata.json
     |   |   |   |       Phase11Traffic.csv
+    |   |   |   |       PHASE11_CONTROL_MESSAGES.md
+    |   |   |   |       PHASE11_MEASUREMENTS.md
     |   |   |   |       WindowsTcpTests.cpp
     |   |   |   |       WindowsTcpTests.h
+    |   |   |   |
     |   |   |   \---Windows
     |   |   |           WindowsControlStream.cpp
     |   |   |           WindowsTcpSocket.cpp
     |   |   |           WindowsTcpSocket.h
+    |   |   |
     |   |   +---Physics
     |   |   |   |   Contact.h
     |   |   |   |   PhysicsSimulationWorld.cpp
@@ -653,14 +715,17 @@ D:.
     |   |   |   |   |       DirectGravitySolver.cpp
     |   |   |   |   |       DirectGravitySolver.h
     |   |   |   |   |       GravitySolver.h
+    |   |   |   |   |
     |   |   |   |   +---Spatial
     |   |   |   |   |       AstroOctree.cpp
     |   |   |   |   |       AstroOctree.h
+    |   |   |   |   |
     |   |   |   |   \---Tests
     |   |   |   |           AstroGravityBenchmark.cpp
     |   |   |   |           AstroGravityBenchmark.h
     |   |   |   |           AstroWorldSelfTests.cpp
     |   |   |   |           AstroWorldSelfTests.h
+    |   |   |   |
     |   |   |   +---Collision
     |   |   |   |       AABB.cpp
     |   |   |   |       AABB.h
@@ -687,6 +752,7 @@ D:.
     |   |   |   |       StaticMeshTriangleBVHQuery.h
     |   |   |   |       StaticSDFCollider.cpp
     |   |   |   |       StaticSDFCollider.h
+    |   |   |   |
     |   |   |   +---Coupling
     |   |   |   |       FluidColliderContact.cpp
     |   |   |   |       FluidColliderContact.h
@@ -696,6 +762,7 @@ D:.
     |   |   |   |       FluidStaticColliderCoupling.h
     |   |   |   |       GridThermalCoupling.cpp
     |   |   |   |       GridThermalCoupling.h
+    |   |   |   |
     |   |   |   +---Debug
     |   |   |   |       PhysicsDebugImmediatePanel.h
     |   |   |   |       PhysicsDebugOverlayFont.h
@@ -703,6 +770,7 @@ D:.
     |   |   |   |       PhysicsDebugRenderer.h
     |   |   |   |       PhysicsDebugRendererCameraContext.cpp
     |   |   |   |       PhysicsDebugSettings.h
+    |   |   |   |
     |   |   |   +---Electromagnetism
     |   |   |   |   |   BarnesHutCoulombSolver.cpp
     |   |   |   |   |   BarnesHutCoulombSolver.h
@@ -724,6 +792,7 @@ D:.
     |   |   |   |   \---Spatial
     |   |   |   |           CoulombOctree.cpp
     |   |   |   |           CoulombOctree.h
+    |   |   |   |
     |   |   |   +---Field
     |   |   |   |       DenseSDF.cpp
     |   |   |   |       DenseSDF.h
@@ -731,6 +800,7 @@ D:.
     |   |   |   |       PhysicsField.h
     |   |   |   |       SparseSDF.cpp
     |   |   |   |       SparseSDF.h
+    |   |   |   |
     |   |   |   +---Fluid
     |   |   |   |   |   FluidCouplingBinding.h
     |   |   |   |   |   FluidParticle.h
@@ -752,9 +822,11 @@ D:.
     |   |   |   |           FluidSPHDemoLayer.h
     |   |   |   |           RunGPUGridFluidDemo.cpp
     |   |   |   |           RunGPUGridFluidDemo.h
+    |   |   |   |
     |   |   |   +---Particle
     |   |   |   |       ParticleSpatialHashGrid.cpp
     |   |   |   |       ParticleSpatialHashGrid.h
+    |   |   |   |
     |   |   |   +---Ragdoll
     |   |   |   |       RagdollAnimationVelocity.cpp
     |   |   |   |       RagdollConstraintSolver.cpp
@@ -764,6 +836,7 @@ D:.
     |   |   |   |       RagdollRuntime.cpp
     |   |   |   |       RagdollRuntime.h
     |   |   |   |       RagdollRuntimeLookup.cpp
+    |   |   |   |
     |   |   |   +---SoftBody
     |   |   |   |   |   SoftBodyCloth.cpp
     |   |   |   |   |   SoftBodyCloth.h
@@ -805,13 +878,16 @@ D:.
     |   |   |   |           SoftBodyParticleTrianglePairInspector.h
     |   |   |   |           SoftBodyPhysicsDebugSvgWriter.cpp
     |   |   |   |           SoftBodyPhysicsDebugSvgWriter.h
+    |   |   |   |
     |   |   |   +---Solver
     |   |   |   |       ContactSolver.cpp
     |   |   |   |       ContactSolver.h
     |   |   |   |       SolverTemporaryAllocationCounter.h
+    |   |   |   |
     |   |   |   +---Spatial
     |   |   |   |       LongRangeOctree.cpp
     |   |   |   |       LongRangeOctree.h
+    |   |   |   |
     |   |   |   +---Tests
     |   |   |   |       CapsuleCollisionSelfTests.cpp
     |   |   |   |       CoulombBenchmark.cpp
@@ -847,6 +923,7 @@ D:.
     |   |   |   |       TemperatureFieldSelfTests.h
     |   |   |   |       ThermalWorldSelfTests.cpp
     |   |   |   |       ThermalWorldSelfTests.h
+    |   |   |   |
     |   |   |   \---Thermal
     |   |   |           GridTemperatureField.cpp
     |   |   |           GridTemperatureField.h
@@ -861,6 +938,7 @@ D:.
     |   |   |           ThermalSystem.h
     |   |   |           ThermalWorld.cpp
     |   |   |           ThermalWorld.h
+    |   |   |
     |   |   +---Platform
     |   |   |   |   RHIDebugConfig.h
     |   |   |   |
@@ -873,6 +951,7 @@ D:.
     |   |   |   |       DX12CommandList.h
     |   |   |   |       DX12CommandQueue.cpp
     |   |   |   |       DX12CommandQueue.h
+    |   |   |   |       DX12Compute.cpp
     |   |   |   |       DX12Device.cpp
     |   |   |   |       DX12Device.h
     |   |   |   |       DX12Factory.cpp
@@ -886,7 +965,6 @@ D:.
     |   |   |   |       DX12SceneBuffer.cpp
     |   |   |   |       DX12SceneBuffer.h
     |   |   |   |       DX12SceneCommandList.h
-    |   |   |   |       DX12Compute.cpp
     |   |   |   |       DX12SceneContext.cpp
     |   |   |   |       DX12SceneContext.h
     |   |   |   |       DX12SceneGraphicsPipeline.h
@@ -899,6 +977,7 @@ D:.
     |   |   |   |       DX12SwapChain.h
     |   |   |   |       RunDX12SceneRuntimeDemo.cpp
     |   |   |   |       RunDX12SceneRuntimeDemo.h
+    |   |   |   |
     |   |   |   +---OpenGL
     |   |   |   |   |   OpenGLClearContext.cpp
     |   |   |   |   |   OpenGLClearContext.h
@@ -930,6 +1009,7 @@ D:.
     |   |   |   |           OpenGLRHIDevice.h
     |   |   |   |           OpenGLRHITexture.cpp
     |   |   |   |           OpenGLRHITexture.h
+    |   |   |   |
     |   |   |   +---Vulkan
     |   |   |   |       RunVulkanSceneRuntimeDemo.cpp
     |   |   |   |       RunVulkanSceneRuntimeDemo.h
@@ -939,6 +1019,7 @@ D:.
     |   |   |   |       VulkanClearContext.h
     |   |   |   |       VulkanCommandBuffer.cpp
     |   |   |   |       VulkanCommandBuffer.h
+    |   |   |   |       VulkanCompute.cpp
     |   |   |   |       VulkanDevice.cpp
     |   |   |   |       VulkanDevice.h
     |   |   |   |       VulkanFrameRenderer.cpp
@@ -957,7 +1038,6 @@ D:.
     |   |   |   |       VulkanSceneBuffer.h
     |   |   |   |       VulkanSceneCommandList.cpp
     |   |   |   |       VulkanSceneCommandList.h
-    |   |   |   |       VulkanCompute.cpp
     |   |   |   |       VulkanSceneContext.cpp
     |   |   |   |       VulkanSceneContext.h
     |   |   |   |       VulkanSceneRenderTarget.cpp
@@ -977,11 +1057,13 @@ D:.
     |   |   |   |       VulkanSurface.h
     |   |   |   |       VulkanSwapChain.cpp
     |   |   |   |       VulkanSwapChain.h
+    |   |   |   |
     |   |   |   \---Windows
     |   |   |           WindowsInput.cpp
     |   |   |           WindowsInput.h
     |   |   |           WindowsWindow.cpp
     |   |   |           WindowsWindow.h
+    |   |   |
     |   |   +---Renderer
     |   |   |   |   Framebuffer.cpp
     |   |   |   |   Framebuffer.h
@@ -989,10 +1071,10 @@ D:.
     |   |   |   |   GraphicsContext.h
     |   |   |   |   RenderCommand.cpp
     |   |   |   |   RenderCommand.h
-    |   |   |   |   RendererFrameDiagnostics.cpp
-    |   |   |   |   RendererFrameDiagnostics.h
     |   |   |   |   Renderer.cpp
     |   |   |   |   Renderer.h
+    |   |   |   |   RendererFrameDiagnostics.cpp
+    |   |   |   |   RendererFrameDiagnostics.h
     |   |   |   |
     |   |   |   +---Buffer
     |   |   |   |       BufferLayout.h
@@ -1002,18 +1084,22 @@ D:.
     |   |   |   |       VertexArray.h
     |   |   |   |       VertexBuffer.cpp
     |   |   |   |       VertexBuffer.h
+    |   |   |   |
     |   |   |   +---Camera
     |   |   |   |       Camera.h
+    |   |   |   |
     |   |   |   +---Layer
     |   |   |   |       Layer.cpp
     |   |   |   |       Layer.h
     |   |   |   |       SandboxLayer.cpp
     |   |   |   |       SandboxLayer.h
+    |   |   |   |
     |   |   |   +---Material
     |   |   |   |       LitMaterialFactory.cpp
     |   |   |   |       LitMaterialFactory.h
     |   |   |   |       Material.cpp
     |   |   |   |       Material.h
+    |   |   |   |
     |   |   |   +---Mesh
     |   |   |   |   |   Mesh.cpp
     |   |   |   |   |   Mesh.h
@@ -1032,10 +1118,12 @@ D:.
     |   |   |   |           SoftBodyJellyMeshDeformer.h
     |   |   |   |           WaveMeshDeformer.cpp
     |   |   |   |           WaveMeshDeformer.h
+    |   |   |   |
     |   |   |   +---Pipeline
     |   |   |   |       Pipeline.cpp
     |   |   |   |       Pipeline.h
     |   |   |   |       SpecificationPipeline.h
+    |   |   |   |
     |   |   |   +---RHI
     |   |   |   |       ClearBackendDemo.cpp
     |   |   |   |       ClearBackendDemo.h
@@ -1071,13 +1159,16 @@ D:.
     |   |   |   |       RHIShaderBinaryLoader.h
     |   |   |   |       RHITexture.h
     |   |   |   |       RHITypes.h
+    |   |   |   |
     |   |   |   +---Shader
     |   |   |   |       Shader.cpp
     |   |   |   |       Shader.h
     |   |   |   |       ShaderTypes.h
+    |   |   |   |
     |   |   |   \---Texture
     |   |   |           Texture.cpp
     |   |   |           Texture.h
+    |   |   |
     |   |   +---Scene
     |   |   |   |   Components.cpp
     |   |   |   |   Components.h
@@ -1117,6 +1208,7 @@ D:.
     |   |   |   +---Debug
     |   |   |   |       EditorBackendComparisonScene.cpp
     |   |   |   |       EditorBackendComparisonScene.h
+    |   |   |   |
     |   |   |   \---Tests
     |   |   |           SceneGraphSelfTests.cpp
     |   |   |           SceneGraphSelfTests.h
@@ -1128,10 +1220,12 @@ D:.
     |   |   |           SceneTransformSelfTests.h
     |   |   |           SceneViewSelfTests.cpp
     |   |   |           SceneViewSelfTests.h
+    |   |   |
     |   |   \---UI
     |   |       +---Animation
     |   |       |       UIAnimationBinding.cpp
     |   |       |       UIAnimationBinding.h
+    |   |       |
     |   |       +---Core
     |   |       |       UIContext.cpp
     |   |       |       UIContext.h
@@ -1145,13 +1239,16 @@ D:.
     |   |       |       UIHitTest.h
     |   |       |       UITextureView.cpp
     |   |       |       UITextureView.h
+    |   |       |
     |   |       +---Debug
     |   |       |       UITreeMutationValidation.h
+    |   |       |
     |   |       +---Docking
     |   |       |       UIDockGeometry.h
     |   |       |       UIDockLayout.h
     |   |       |       UIDockSpace.cpp
     |   |       |       UIDockSpace.h
+    |   |       |
     |   |       +---Document
     |   |       |       DefaultDocumentImporters.cpp
     |   |       |       DefaultDocumentImporters.h
@@ -1164,24 +1261,28 @@ D:.
     |   |       |       UIVectorDocument.cpp
     |   |       |       UIVectorDocument.h
     |   |       |       VectorDocument.h
+    |   |       |
     |   |       +---Immediate
     |   |       |       UIImmediateContext.h
+    |   |       |
     |   |       +---Navigation
     |   |       |       UINavigationManager.cpp
     |   |       |       UINavigationManager.h
     |   |       |       UIScreen.cpp
     |   |       |       UIScreen.h
+    |   |       |
     |   |       +---Rendering
     |   |       |       ExplicitUIRenderer.cpp
     |   |       |       ExplicitUIRenderer.h
     |   |       |       OpenGLUIRenderer.cpp
     |   |       |       OpenGLUIRenderer.h
-    |   |       |       UIRenderer.cpp
-    |   |       |       UIRenderer.h
     |   |       |       UIGeometryBuilder.cpp
     |   |       |       UIGeometryBuilder.h
+    |   |       |       UIRenderer.cpp
+    |   |       |       UIRenderer.h
     |   |       |       UITessellator.cpp
     |   |       |       UITessellator.h
+    |   |       |
     |   |       +---Screens
     |   |       |       HUDScreen.cpp
     |   |       |       HUDScreen.h
@@ -1193,8 +1294,10 @@ D:.
     |   |       |       SettingsScreen.h
     |   |       |       TitleScreen.cpp
     |   |       |       TitleScreen.h
+    |   |       |
     |   |       +---Style
     |   |       |       UITheme.h
+    |   |       |
     |   |       +---Svg
     |   |       |   |   SvgImportContext.h
     |   |       |   |   SvgImporter.cpp
@@ -1208,6 +1311,7 @@ D:.
     |   |       |   \---Debug
     |   |       |           UISvgDemoLayer.cpp
     |   |       |           UISvgDemoLayer.h
+    |   |       |
     |   |       +---Text
     |   |       |   |   UIFontAtlas.cpp
     |   |       |   |   UIFontAtlas.h
@@ -1225,6 +1329,7 @@ D:.
     |   |       |   \---Debug
     |   |       |           UITextDemoLayer.cpp
     |   |       |           UITextDemoLayer.h
+    |   |       |
     |   |       \---Widgets
     |   |               UIButton.cpp
     |   |               UIButton.h
@@ -1264,6 +1369,7 @@ D:.
     |   |               UITooltip.h
     |   |               UITreeView.h
     |   |               UIWindow.h
+    |   |
     |   |
     |   +---Root
     |   |   \---x64

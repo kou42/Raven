@@ -124,7 +124,14 @@ public:
         {
             return false;
         }
-        return m_Device->PrepareScene(scene);
+        // Vulkan側と同じScene入口で共有Meshを1回ずつ準備します。
+        // DX12のDraw Commandが揃うまでは描画自体は呼び出し側で行いません。
+        if (m_Context.GetNativeDevice() == nullptr ||
+            m_Context.GetActiveCommandList() != nullptr)
+        {
+            return false;
+        }
+        return scene.PrepareRHIMeshes(*m_Device);
     }
 
     bool SupportsOffscreenSceneRendering() const override;

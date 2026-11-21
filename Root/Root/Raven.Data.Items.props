@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- Rootとライブラリで同じ所有一覧を使う。 -->
+  <ItemGroup>
+    <RavenDataSource Include="Raven\Data\DataDocument.cpp" />
+    <RavenDataSource Include="Raven\Data\DataElement.cpp" />
+    <RavenDataSource Include="Raven\Data\DataReader.cpp" />
+    <RavenDataSource Include="Raven\Data\DataUtf8.cpp" />
+    <RavenDataSource Include="Raven\Data\DataWriter.cpp" />
+    <RavenDataSource Include="Raven\Data\Formats\Binary\BinaryDocument.cpp" />
+    <RavenDataSource Include="Raven\Data\Formats\Json\JsonParser.cpp" />
+    <RavenDataSource Include="Raven\Data\Formats\Json\JsonWriter.cpp" />
+    <RavenDataSource Include="Raven\Data\Formats\MessagePack\MessagePackParser.cpp" />
+    <RavenDataSource Include="Raven\Data\Formats\MessagePack\MessagePackWriter.cpp" />
+    <RavenDataSource Include="Raven\Data\MutableDataDocument.cpp" />
+    <RavenDataSource Include="Raven\Data\Serialization\Serialization.cpp" />
+    <RavenDataHeader Include="Raven\Data\DataDocument.h" />
+    <RavenDataHeader Include="Raven\Data\DataElement.h" />
+    <RavenDataHeader Include="Raven\Data\DataReader.h" />
+    <RavenDataHeader Include="Raven\Data\DataToken.h" />
+    <RavenDataHeader Include="Raven\Data\DataUtf8.h" />
+    <RavenDataHeader Include="Raven\Data\DataWriter.h" />
+    <RavenDataHeader Include="Raven\Data\Formats\Binary\BinaryDocument.h" />
+    <RavenDataHeader Include="Raven\Data\Formats\Json\JsonParser.h" />
+    <RavenDataHeader Include="Raven\Data\Formats\Json\JsonWriter.h" />
+    <RavenDataHeader Include="Raven\Data\Formats\MessagePack\MessagePackParser.h" />
+    <RavenDataHeader Include="Raven\Data\Formats\MessagePack\MessagePackWriter.h" />
+    <RavenDataHeader Include="Raven\Data\MutableDataDocument.h" />
+    <RavenDataHeader Include="Raven\Data\Serialization\ParallelDeserialize.h" />
+    <RavenDataHeader Include="Raven\Data\Serialization\Serialization.h" />
+    <RavenDataInline Include="Raven\Data\Serialization\ParallelDeserialize.inl" />
+    <RavenDataInline Include="Raven\Data\Serialization\Serialization.inl" />
+  </ItemGroup>
+</Project>

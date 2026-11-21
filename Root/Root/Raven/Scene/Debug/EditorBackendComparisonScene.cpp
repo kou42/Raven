@@ -147,7 +147,7 @@ void EditorBackendComparisonScene::RenderWithCamera(const Camera& camera)
     }
     Renderer::BeginScene(camera);
     RenderEntities();
-    Renderer::EndScene();
+    Scene::EndRenderScene();
 }
 
 void EditorBackendComparisonScene::OnEvent(Event& event)

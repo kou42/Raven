@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Raven" />
+    <Filter Include="Raven\Editor" />
+    <Filter Include="Raven\Editor\Command" />
+    <Filter Include="Raven\Editor\Panels" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Raven\Editor\Command\CreateEntityCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Command\CreateEntityCommand.h"><Filter>Raven\Editor\Command</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Command\DataDocumentEditCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Command\DataDocumentEditCommand.h"><Filter>Raven\Editor\Command</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Command\DeleteEntityCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Command\DeleteEntityCommand.h"><Filter>Raven\Editor\Command</Filter></ClInclude>
+    <None Include="Raven\Editor\Command\DeleteEntityCommand.inl"><Filter>Raven\Editor\Command</Filter></None>
+    <ClInclude Include="Raven\Editor\Command\IEditorCommand.h"><Filter>Raven\Editor\Command</Filter></ClInclude>
+    <ClInclude Include="Raven\Editor\Command\InspectorEditCommand.h"><Filter>Raven\Editor\Command</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Command\RenameEntityCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Command\RenameEntityCommand.h"><Filter>Raven\Editor\Command</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Command\ReparentEntityCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Command\ReparentEntityCommand.h"><Filter>Raven\Editor\Command</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Command\SetPrimaryCameraCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Command\SetPrimaryCameraCommand.h"><Filter>Raven\Editor\Command</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Command\TransformCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Command\TransformCommand.h"><Filter>Raven\Editor\Command</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\EditorCamera.cpp"><Filter>Raven\Editor</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\EditorCamera.h"><Filter>Raven\Editor</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\EditorCommandHistory.cpp"><Filter>Raven\Editor</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\EditorCommandHistory.h"><Filter>Raven\Editor</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\EditorDockLayout.cpp"><Filter>Raven\Editor</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\EditorDockLayout.h"><Filter>Raven\Editor</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\EditorEntityPicking.cpp"><Filter>Raven\Editor</Filter></ClCompile>
+    <ClCompile Include="Raven\Editor\EditorGizmo.cpp"><Filter>Raven\Editor</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\EditorGizmo.h"><Filter>Raven\Editor</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\EditorLayer.cpp"><Filter>Raven\Editor</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\EditorLayer.h"><Filter>Raven\Editor</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\EditorSelectionOutline.cpp"><Filter>Raven\Editor</Filter></ClCompile>
+    <ClCompile Include="Raven\Editor\EditorShortcutRouter.cpp"><Filter>Raven\Editor</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\EditorShortcutRouter.h"><Filter>Raven\Editor</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\EditorViewportGeometry.cpp"><Filter>Raven\Editor</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\EditorViewportGeometry.h"><Filter>Raven\Editor</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Panels\AnimationDebugActions.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Panels\AnimationDebugActions.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Panels\AnimationDebugRavenPanel.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Panels\AnimationDebugRavenPanel.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Panels\AnimationDebugSnapshot.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Panels\AnimationDebugSnapshot.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Panels\DiagnosticsRavenPanel.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Panels\DiagnosticsRavenPanel.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Panels\DiagnosticsViewModel.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Panels\DiagnosticsViewModel.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Panels\EditorViewportRavenPanel.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Panels\EditorViewportRavenPanel.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Panels\InspectorController.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Panels\InspectorController.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Panels\InspectorRavenPanel.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Panels\InspectorRavenPanel.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Panels\InspectorSnapshot.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Panels\InspectorSnapshot.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Panels\SceneHierarchyRavenPanel.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Panels\SceneHierarchyRavenPanel.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Panels\SceneHierarchySnapshot.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Panels\SceneHierarchySnapshot.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Panels\StatisticsActions.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Panels\StatisticsActions.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Panels\StatisticsRavenPanel.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Panels\StatisticsRavenPanel.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Panels\StatisticsSnapshot.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Panels\StatisticsSnapshot.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Panels\StatisticsUISnapshot.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+  </ItemGroup>
+</Project>

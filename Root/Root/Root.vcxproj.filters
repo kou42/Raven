@@ -2,657 +2,6 @@
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="src\glad.c" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-    <ClCompile Include="Raven\**\*.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
-    <ClInclude Include="Raven\**\*.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Raven\Audio">
@@ -702,219 +51,36 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Update="Raven\Audio\AudioService.cpp">
-      <Filter>Raven\Audio</Filter>
-    </ClCompile>
-    <ClCompile Update="Raven\Core\ApplicationState.cpp">
-      <Filter>Raven\Core</Filter>
-    </ClCompile>
-    <ClCompile Update="Raven\Scene\SceneStreamingController.cpp">
-      <Filter>Raven\Scene</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Audio\AudioService.h">
-      <Filter>Raven\Audio</Filter>
-    </ClInclude>
-    <ClInclude Update="Raven\Core\ApplicationState.h">
-      <Filter>Raven\Core</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Core\Containers\String.cpp">
-      <Filter>Raven\Core\Containers</Filter>
-    </ClCompile>
-    <ClCompile Update="Raven\Core\Containers\Name.cpp">
-      <Filter>Raven\Core\Containers</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Core\Containers\Name.h">
-      <Filter>Raven\Core\Containers</Filter>
-    </ClInclude>
-    <ClInclude Update="Raven\Core\Containers\String.h">
-      <Filter>Raven\Core\Containers</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Core\Containers\StringView.cpp">
-      <Filter>Raven\Core\Containers</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Core\Containers\StringView.h">
-      <Filter>Raven\Core\Containers</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Core\Containers\Tests\StringSelfTests.cpp">
+    <ClCompile Include="Raven\Core\Containers\Tests\StringSelfTests.cpp">
       <Filter>Raven\Core\Containers\Tests</Filter>
     </ClCompile>
-    <ClCompile Update="Raven\Core\Containers\Tests\NameSelfTests.cpp">
+    <ClCompile Include="Raven\Core\Containers\Tests\NameSelfTests.cpp">
       <Filter>Raven\Core\Containers\Tests</Filter>
     </ClCompile>
-    <ClInclude Update="Raven\Core\Containers\Tests\NameSelfTests.h">
+    <ClInclude Include="Raven\Core\Containers\Tests\NameSelfTests.h">
       <Filter>Raven\Core\Containers\Tests</Filter>
     </ClInclude>
-    <ClInclude Update="Raven\Core\Containers\Tests\StringSelfTests.h">
+    <ClInclude Include="Raven\Core\Containers\Tests\StringSelfTests.h">
       <Filter>Raven\Core\Containers\Tests</Filter>
     </ClInclude>
-    <ClInclude Update="Raven\Scene\SceneStreamingController.h">
-      <Filter>Raven\Scene</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\UI\Core\UITextureView.cpp">
-      <Filter>Raven\UI\Core</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\UI\Core\UITextureView.h">
-      <Filter>Raven\UI\Core</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Editor\EditorShortcutRouter.cpp">
-      <Filter>Raven\Editor</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Editor\EditorShortcutRouter.h">
-      <Filter>Raven\Editor</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Editor\EditorDockLayout.cpp">
-      <Filter>Raven\Editor</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Editor\EditorDockLayout.h">
-      <Filter>Raven\Editor</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Editor\Panels\StatisticsSnapshot.cpp">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Editor\Panels\StatisticsSnapshot.h">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Editor\Panels\StatisticsRavenPanel.cpp">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Editor\Panels\StatisticsRavenPanel.h">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Editor\Panels\AnimationDebugSnapshot.cpp">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Editor\Panels\AnimationDebugSnapshot.h">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Editor\Panels\AnimationDebugRavenPanel.cpp">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Editor\Panels\AnimationDebugRavenPanel.h">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Editor\Panels\AnimationDebugActions.cpp">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Editor\Panels\AnimationDebugActions.h">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Editor\Panels\SceneHierarchySnapshot.cpp">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Editor\Panels\SceneHierarchySnapshot.h">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Editor\Panels\SceneHierarchyRavenPanel.cpp">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Editor\Panels\SceneHierarchyRavenPanel.h">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Editor\Panels\StatisticsActions.cpp">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Editor\Panels\StatisticsActions.h">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClInclude>
-    <ClInclude Update="Raven\Editor\Command\DeleteEntityCommand.h">
-      <Filter>Raven\Editor\Command</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Editor\Command\SetPrimaryCameraCommand.cpp">
-      <Filter>Raven\Editor\Command</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Editor\Command\SetPrimaryCameraCommand.h">
-      <Filter>Raven\Editor\Command</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Editor\Tests\EditorEntityCommandSelfTests.cpp">
+    <ClCompile Include="Raven\Editor\Tests\EditorEntityCommandSelfTests.cpp">
       <Filter>Raven\Editor\Tests</Filter>
     </ClCompile>
-    <ClInclude Update="Raven\Editor\Tests\EditorEntityCommandSelfTests.h">
+    <ClInclude Include="Raven\Editor\Tests\EditorEntityCommandSelfTests.h">
       <Filter>Raven\Editor\Tests</Filter>
     </ClInclude>
-    <ClCompile Update="Raven\Editor\Panels\InspectorController.cpp">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Editor\Panels\InspectorController.h">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClInclude>
-    <ClInclude Update="Raven\UI\Widgets\UIInputNumber.h">
-      <Filter>Raven\UI\Widgets</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\UI\Widgets\UIInputNumber.cpp">
-      <Filter>Raven\UI\Widgets</Filter>
-    </ClCompile>
-    <ClCompile Update="Raven\Editor\Panels\InspectorSnapshot.cpp">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Editor\Panels\InspectorSnapshot.h">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Editor\Panels\InspectorRavenPanel.cpp">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Editor\Panels\InspectorRavenPanel.h">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Editor\Tests\InspectorSnapshotSelfTests.cpp">
+    <ClCompile Include="Raven\Editor\Tests\InspectorSnapshotSelfTests.cpp">
       <Filter>Raven\Editor\Tests</Filter>
     </ClCompile>
-    <ClInclude Update="Raven\Editor\Tests\InspectorSnapshotSelfTests.h">
+    <ClInclude Include="Raven\Editor\Tests\InspectorSnapshotSelfTests.h">
       <Filter>Raven\Editor\Tests</Filter>
     </ClInclude>
-    <ClCompile Update="Raven\Editor\EditorViewportGeometry.cpp">
-      <Filter>Raven\Editor</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Editor\EditorViewportGeometry.h">
-      <Filter>Raven\Editor</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Editor\Panels\EditorViewportRavenPanel.cpp">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Editor\Panels\EditorViewportRavenPanel.h">
-      <Filter>Raven\Editor\Panels</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Editor\Tests\EditorViewportGeometrySelfTests.cpp">
+    <ClCompile Include="Raven\Editor\Tests\EditorViewportGeometrySelfTests.cpp">
       <Filter>Raven\Editor\Tests</Filter>
     </ClCompile>
-    <ClInclude Update="Raven\Editor\Tests\EditorViewportGeometrySelfTests.h">
+    <ClInclude Include="Raven\Editor\Tests\EditorViewportGeometrySelfTests.h">
       <Filter>Raven\Editor\Tests</Filter>
     </ClInclude>
-    <ClCompile Update="Raven\Renderer\RHI\RHIOffscreenRenderTarget.cpp">
-      <Filter>Raven\Renderer\RHI</Filter>
-    </ClCompile>
-    <ClCompile Update="Raven\Renderer\RHI\IExplicitSceneRuntime.cpp">
-      <Filter>Raven\Renderer\RHI</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Renderer\RHI\RHIOffscreenRenderTarget.h">
-      <Filter>Raven\Renderer\RHI</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Platform\DirectX12\DX12OffscreenRenderTarget.cpp">
-      <Filter>Raven\Platform\DirectX12</Filter>
-    </ClCompile>
-    <ClCompile Update="Raven\Platform\DirectX12\DX12SceneRuntime.cpp">
-      <Filter>Raven\Platform\DirectX12</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Platform\DirectX12\DX12OffscreenRenderTarget.h">
-      <Filter>Raven\Platform\DirectX12</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Platform\Vulkan\VulkanOffscreenRenderTarget.cpp">
-      <Filter>Raven\Platform\Vulkan</Filter>
-    </ClCompile>
-    <ClInclude Update="Raven\Platform\Vulkan\VulkanOffscreenRenderTarget.h">
-      <Filter>Raven\Platform\Vulkan</Filter>
-    </ClInclude>
-    <ClCompile Update="Raven\Platform\Vulkan\VulkanSceneCommandList.cpp">
-      <Filter>Raven\Platform\Vulkan</Filter>
-    </ClCompile>
-    <ClCompile Update="Raven\Platform\Vulkan\VulkanSceneRHIDevice.cpp">
-      <Filter>Raven\Platform\Vulkan</Filter>
-    </ClCompile>
-    <ClCompile Update="Raven\Platform\Vulkan\VulkanSceneRHITexture.cpp">
-      <Filter>Raven\Platform\Vulkan</Filter>
-    </ClCompile>
-    <ClCompile Update="Raven\Platform\Vulkan\VulkanSceneTexture.cpp">
-      <Filter>Raven\Platform\Vulkan</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Raven\Assets\Images\test\mountain1.png" />
@@ -926,21 +92,8 @@
     <None Include="Raven\Assets\Shaders\ShaderToy\test.frag" />
     <None Include="Raven\Assets\Shaders\Vertex\test.vert" />
     <None Include="Raven\Assets\Shaders\Vertex\texture_test.vert" />
-    <None Include="Raven\Core\Containers\Vector.inl" />
-    <None Include="Raven\Core\Containers\SmallVector.inl" />
-    <None Include="Raven\Core\Containers\FixedVector.inl" />
-    <None Include="Raven\Core\Containers\FlatHashSet.inl" />
-    <None Include="Raven\Core\Containers\FlatHashMap.inl" />
-    <None Include="Raven\Core\Containers\Span.inl" />
-    <None Include="Raven\Core\Containers\Array.inl" />
-    <None Include="Raven\Core\Containers\RingBuffer.inl" />
-    <None Include="Raven\Core\Containers\BitSet.inl" />
-    <None Include="Raven\Core\Containers\HandlePool.inl" />
-    <None Include="Raven\Core\Containers\SparseSet.inl" />
-    <None Include="Raven\Physics\Collision\BroadPhase.inl" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Raven\Core\Containers\FlatHashMap.h" />
     <ClInclude Include="Raven\Core\Containers\Benchmarks\ContainerBenchmark.h" />
     <ClInclude Include="Raven\Core\Containers\Benchmarks\FlatHashMapBenchmark.h" />
     <ClInclude Include="Raven\Core\Containers\Benchmarks\NameBenchmark.h">
@@ -948,12 +101,6 @@
     </ClInclude>
     <ClInclude Include="Raven\Core\Containers\Tests\FlatHashMapSelfTests.h" />
     <ClCompile Include="Raven\Core\Containers\Tests\FlatHashMapSelfTests.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Update="Raven\Core\Containers\PoolOwnedHandle.h" />
-    <ClInclude Update="Raven\Core\Containers\IntrusivePtr.h" />
-    <ClInclude Update="Raven\Core\Containers\UniquePtr.h" />
-    <ClInclude Update="Raven\Core\Containers\WeakHandle.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Raven\\Diagnostics" />
@@ -988,11 +135,6 @@
   <ItemGroup>
     <Filter Include="Raven\Data"><UniqueIdentifier>{501e384c-0509-5a4e-b16b-87a18b614c56}</UniqueIdentifier></Filter>
     <Filter Include="Raven\Data\Tests"><UniqueIdentifier>{603446fc-d10f-5ce6-886f-f6e43ddf3940}</UniqueIdentifier></Filter>
-    <ClCompile Include="Raven\Data\DataDocument.cpp"><Filter>Raven\Data</Filter></ClCompile>
-    <ClInclude Include="Raven\Data\DataDocument.h"><Filter>Raven\Data</Filter></ClInclude>
-    <ClCompile Include="Raven\Data\DataElement.cpp"><Filter>Raven\Data</Filter></ClCompile>
-    <ClInclude Include="Raven\Data\DataElement.h"><Filter>Raven\Data</Filter></ClInclude>
-    <ClInclude Include="Raven\Data\DataToken.h"><Filter>Raven\Data</Filter></ClInclude>
     <ClCompile Include="Raven\Data\Tests\DataDocumentTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
     <ClInclude Include="Raven\Data\Tests\DataDocumentTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
     <None Include="Raven\Data\Tests\README.md"><Filter>Raven\Data\Tests</Filter></None>
@@ -1000,10 +142,6 @@
   <ItemGroup>
     <Filter Include="Raven\Data\Formats"><UniqueIdentifier>{eac6a571-e813-5e39-9abe-dd39672eec4d}</UniqueIdentifier></Filter>
     <Filter Include="Raven\Data\Formats\Json"><UniqueIdentifier>{c5c1567c-2128-5ec5-b4f5-b0b97f2aa483}</UniqueIdentifier></Filter>
-    <ClInclude Include="Raven\Core\JsonLexicalReader.h"><Filter>Raven\Core</Filter></ClInclude>
-    <ClCompile Include="Raven\Core\JsonLexicalReader.cpp"><Filter>Raven\Core</Filter></ClCompile>
-    <ClInclude Include="Raven\Data\Formats\Json\JsonParser.h"><Filter>Raven\Data\Formats\Json</Filter></ClInclude>
-    <ClCompile Include="Raven\Data\Formats\Json\JsonParser.cpp"><Filter>Raven\Data\Formats\Json</Filter></ClCompile>
     <ClInclude Include="Raven\Data\Tests\JsonParserTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
     <ClCompile Include="Raven\Data\Tests\JsonParserTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
   </ItemGroup>
@@ -1036,9 +174,8 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Update="Raven\Core\Memory\AllocationMeasurement.h"><Filter>Raven\Core\Memory</Filter></ClInclude>
-    <ClCompile Update="Raven\Core\Memory\AllocationMeasurement.cpp"><Filter>Raven\Core\Memory</Filter></ClCompile>
-    <ClCompile Update="Raven\Editor\Panels\StatisticsUISnapshot.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
+    <ClInclude Include="Raven\Core\Memory\AllocationMeasurement.h"><Filter>Raven\Core\Memory</Filter></ClInclude>
+    <ClCompile Include="Raven\Core\Memory\AllocationMeasurement.cpp"><Filter>Raven\Core\Memory</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup><Filter Include="Raven\Core\Memory" /></ItemGroup>
   <ItemGroup>
@@ -1047,16 +184,8 @@
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Raven\Scene\Debug"><UniqueIdentifier>{b319094e-d120-447a-a646-cb25a5363d8a}</UniqueIdentifier></Filter>
-    <ClInclude Include="Raven\Scene\Debug\EditorBackendComparisonScene.h"><Filter>Raven\Scene\Debug</Filter></ClInclude>
-    <ClCompile Include="Raven\Scene\Debug\EditorBackendComparisonScene.cpp"><Filter>Raven\Scene\Debug</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Raven\Data\DataReader.cpp"><Filter>Raven\Data</Filter></ClCompile>
-    <ClInclude Include="Raven\Data\DataReader.h"><Filter>Raven\Data</Filter></ClInclude>
-    <ClCompile Include="Raven\Data\DataWriter.cpp"><Filter>Raven\Data</Filter></ClCompile>
-    <ClInclude Include="Raven\Data\DataWriter.h"><Filter>Raven\Data</Filter></ClInclude>
-    <ClCompile Include="Raven\Data\Formats\Json\JsonWriter.cpp"><Filter>Raven\Data\Formats\Json</Filter></ClCompile>
-    <ClInclude Include="Raven\Data\Formats\Json\JsonWriter.h"><Filter>Raven\Data\Formats\Json</Filter></ClInclude>
     <ClCompile Include="Raven\Data\Tests\DataIOTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
     <ClInclude Include="Raven\Data\Tests\DataIOTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
   </ItemGroup>
@@ -1064,69 +193,46 @@
     <Filter Include="Raven\Data\Serialization"><UniqueIdentifier>{d87945b0-6713-4db8-9195-3c4f97dd7f90}</UniqueIdentifier></Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Raven\Data\Serialization\Serialization.h"><Filter>Raven\Data\Serialization</Filter></ClInclude>
-    <None Include="Raven\Data\Serialization\Serialization.inl"><Filter>Raven\Data\Serialization</Filter></None>
-    <ClCompile Include="Raven\Data\Serialization\Serialization.cpp"><Filter>Raven\Data\Serialization</Filter></ClCompile>
     <ClInclude Include="Raven\Data\Tests\SerializationTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
     <ClCompile Include="Raven\Data\Tests\SerializationTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Raven\Data\Formats\MessagePack"><UniqueIdentifier>{407ff511-0bb5-5c9a-8d04-535f8cf15e34}</UniqueIdentifier></Filter>
-    <ClCompile Include="Raven\Data\DataUtf8.cpp"><Filter>Raven\Data</Filter></ClCompile>
-    <ClInclude Include="Raven\Data\DataUtf8.h"><Filter>Raven\Data</Filter></ClInclude>
-    <ClCompile Include="Raven\Data\Formats\MessagePack\MessagePackParser.cpp"><Filter>Raven\Data\Formats\MessagePack</Filter></ClCompile>
-    <ClInclude Include="Raven\Data\Formats\MessagePack\MessagePackParser.h"><Filter>Raven\Data\Formats\MessagePack</Filter></ClInclude>
-    <ClCompile Include="Raven\Data\Formats\MessagePack\MessagePackWriter.cpp"><Filter>Raven\Data\Formats\MessagePack</Filter></ClCompile>
-    <ClInclude Include="Raven\Data\Formats\MessagePack\MessagePackWriter.h"><Filter>Raven\Data\Formats\MessagePack</Filter></ClInclude>
     <ClCompile Include="Raven\Data\Tests\MessagePackTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
     <ClInclude Include="Raven\Data\Tests\MessagePackTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Raven\Scene\ComponentStorage.inl"><Filter>Raven\Scene</Filter></None>
-    <None Include="Raven\Scene\Scene.inl"><Filter>Raven\Scene</Filter></None>
     <None Include="..\Tests\SceneStorageTests.cpp"><Filter>Raven\Scene</Filter></None>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Raven\Scene\Tests" />
-    <ClCompile Update="Raven\Scene\SceneGraph.cpp"><Filter>Raven\Scene</Filter></ClCompile>
-    <ClInclude Update="Raven\Scene\SceneGraph.h"><Filter>Raven\Scene</Filter></ClInclude>
-    <ClCompile Update="Raven\Scene\Tests\SceneGraphSelfTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
-    <ClInclude Update="Raven\Scene\Tests\SceneGraphSelfTests.h"><Filter>Raven\Scene\Tests</Filter></ClInclude>
-    <ClCompile Update="Raven\Editor\Command\DeleteEntityCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
-    <None Include="Raven\Editor\Command\DeleteEntityCommand.inl"><Filter>Raven\Editor\Command</Filter></None>
+    <ClCompile Include="Raven\Scene\Tests\SceneGraphSelfTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Scene\Tests\SceneGraphSelfTests.h"><Filter>Raven\Scene\Tests</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Raven\Math" />
-    <ClInclude Update="Raven\Math\TransformMath.h"><Filter>Raven\Math</Filter></ClInclude>
-    <ClCompile Update="Raven\Math\TransformMath.cpp"><Filter>Raven\Math</Filter></ClCompile>
-    <ClInclude Update="Raven\Scene\SceneTransformSystem.h"><Filter>Raven\Scene</Filter></ClInclude>
-    <ClCompile Update="Raven\Scene\SceneTransformSystem.cpp"><Filter>Raven\Scene</Filter></ClCompile>
-    <ClInclude Update="Raven\Scene\Tests\SceneTransformSelfTests.h"><Filter>Raven\Scene\Tests</Filter></ClInclude>
-    <ClCompile Update="Raven\Scene\Tests\SceneTransformSelfTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
-    <ClCompile Update="Raven\Editor\Command\ReparentEntityCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
+    <ClInclude Include="Raven\Scene\Tests\SceneTransformSelfTests.h"><Filter>Raven\Scene\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Scene\Tests\SceneTransformSelfTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
     <None Include="..\Tests\TransformMathTests.cpp"><Filter>Raven\Math</Filter></None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Update="Raven\Scene\Tests\SceneViewSelfTests.h"><Filter>Raven\Scene\Tests</Filter></ClInclude>
-    <ClCompile Update="Raven\Scene\Tests\SceneViewSelfTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
-    <ClInclude Update="Raven\Scene\Tests\SceneRuntimeComparisonTests.h"><Filter>Raven\Scene\Tests</Filter></ClInclude>
-    <ClCompile Update="Raven\Scene\Tests\SceneRuntimeComparisonTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
-    <ClCompile Update="Raven\Renderer\RHI\RHISceneDrawItemBuilder.cpp"><Filter>Raven\Renderer\RHI</Filter></ClCompile>
+    <ClInclude Include="Raven\Scene\Tests\SceneViewSelfTests.h"><Filter>Raven\Scene\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Scene\Tests\SceneViewSelfTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Scene\Tests\SceneRuntimeComparisonTests.h"><Filter>Raven\Scene\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Scene\Tests\SceneRuntimeComparisonTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Update="Raven\Data\Tests\StructuredDataTestAsset.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
-    <ClCompile Update="Raven\Data\Tests\StructuredDataTestAsset.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
-    <ClCompile Update="Raven\Data\Tests\StructuredDataTestAssetTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Tests\StructuredDataTestAsset.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Tests\StructuredDataTestAsset.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Data\Tests\StructuredDataTestAssetTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
     <None Include="Raven\Data\Tests\StructuredDataTestAsset.v1.json"><Filter>Raven\Data\Tests</Filter></None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Update="Raven\Data\Serialization\ParallelDeserialize.h"><Filter>Raven\Data\Serialization</Filter></ClInclude>
-    <None Include="Raven\Data\Serialization\ParallelDeserialize.inl"><Filter>Raven\Data\Serialization</Filter></None>
-    <ClCompile Update="Raven\Data\Tests\DataBenchmarkMemory.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
-    <ClInclude Update="Raven\Data\Tests\DataBenchmarkMemory.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
-    <ClCompile Update="Raven\Data\Tests\ParallelDeserializeTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
-    <ClInclude Update="Raven\Data\Tests\ParallelDeserializeTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
-    <ClCompile Update="Raven\Data\Tests\StructuredDataBenchmarks.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Data\Tests\DataBenchmarkMemory.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Tests\DataBenchmarkMemory.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Tests\ParallelDeserializeTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Tests\ParallelDeserializeTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Tests\StructuredDataBenchmarks.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Raven\Data\Tests\PHASE8_MEASUREMENTS.md"><Filter>Raven\Data\Tests</Filter></None>
@@ -1134,24 +240,18 @@
     <None Include="Raven\Data\Tests\Phase8Memory.csv"><Filter>Raven\Data\Tests</Filter></None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Update="Raven\Data\MutableDataDocument.h"><Filter>Raven\Data</Filter></ClInclude>
-    <ClCompile Update="Raven\Data\MutableDataDocument.cpp"><Filter>Raven\Data</Filter></ClCompile>
-    <ClInclude Update="Raven\Data\Tests\MutableDataDocumentTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
-    <ClCompile Update="Raven\Data\Tests\MutableDataDocumentTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
-    <ClInclude Update="Raven\Editor\Command\DataDocumentEditCommand.h"><Filter>Raven\Editor\Command</Filter></ClInclude>
-    <ClCompile Update="Raven\Editor\Command\DataDocumentEditCommand.cpp"><Filter>Raven\Editor\Command</Filter></ClCompile>
-    <ClInclude Update="Raven\Editor\Tests\DataDocumentEditCommandTests.h"><Filter>Raven\Editor\Tests</Filter></ClInclude>
-    <ClCompile Update="Raven\Editor\Tests\DataDocumentEditCommandTests.cpp"><Filter>Raven\Editor\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Tests\MutableDataDocumentTests.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Tests\MutableDataDocumentTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Editor\Tests\DataDocumentEditCommandTests.h"><Filter>Raven\Editor\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Editor\Tests\DataDocumentEditCommandTests.cpp"><Filter>Raven\Editor\Tests</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Raven\Data\Tests\PHASE9_EDITING.md"><Filter>Raven\Data\Tests</Filter></None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Update="Raven\Data\Formats\Binary\BinaryDocument.h"><Filter>Raven\Data\Formats\Binary</Filter></ClInclude>
-    <ClCompile Update="Raven\Data\Formats\Binary\BinaryDocument.cpp"><Filter>Raven\Data\Formats\Binary</Filter></ClCompile>
-    <ClInclude Update="Raven\Data\Tests\CompiledTestAsset.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
-    <ClCompile Update="Raven\Data\Tests\CompiledTestAsset.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
-    <ClCompile Update="Raven\Data\Tests\CompiledTestAssetTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Tests\CompiledTestAsset.h"><Filter>Raven\Data\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Tests\CompiledTestAsset.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Data\Tests\CompiledTestAssetTests.cpp"><Filter>Raven\Data\Tests</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup><Filter Include="Raven\Data\Formats\Binary" /></ItemGroup>
   <ItemGroup>
@@ -1160,23 +260,17 @@
   <ItemGroup>
     <Filter Include="Raven\Network" />
     <Filter Include="Raven\Network\Tests" />
-    <ClInclude Update="Raven\Network\ControlMessageCodec.h"><Filter>Raven\Network</Filter></ClInclude>
-    <ClCompile Update="Raven\Network\ControlMessageCodec.cpp"><Filter>Raven\Network</Filter></ClCompile>
-    <ClInclude Update="Raven\Network\ControlMessageReceiver.h"><Filter>Raven\Network</Filter></ClInclude>
-    <ClCompile Update="Raven\Network\ControlMessageReceiver.cpp"><Filter>Raven\Network</Filter></ClCompile>
-    <ClInclude Update="Raven\Network\Tests\ControlMessageTests.h"><Filter>Raven\Network\Tests</Filter></ClInclude>
-    <ClCompile Update="Raven\Network\Tests\ControlMessageTests.cpp"><Filter>Raven\Network\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Network\Tests\ControlMessageTests.h"><Filter>Raven\Network\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Network\Tests\ControlMessageTests.cpp"><Filter>Raven\Network\Tests</Filter></ClCompile>
     <None Include="Raven\Network\Tests\PHASE11_CONTROL_MESSAGES.md"><Filter>Raven\Network\Tests</Filter></None>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Raven\Network\Windows" />
-    <ClInclude Update="Raven\Network\Windows\WindowsTcpSocket.h"><Filter>Raven\Network\Windows</Filter></ClInclude>
-    <ClCompile Update="Raven\Network\Windows\WindowsTcpSocket.cpp"><Filter>Raven\Network\Windows</Filter></ClCompile>
-    <ClInclude Update="Raven\Network\Tests\WindowsTcpTests.h"><Filter>Raven\Network\Tests</Filter></ClInclude>
-    <ClCompile Update="Raven\Network\Tests\WindowsTcpTests.cpp"><Filter>Raven\Network\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Network\Tests\WindowsTcpTests.h"><Filter>Raven\Network\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Network\Tests\WindowsTcpTests.cpp"><Filter>Raven\Network\Tests</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Update="Raven\Network\Tests\ControlMessageBenchmarks.cpp"><Filter>Raven\Network\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Network\Tests\ControlMessageBenchmarks.cpp"><Filter>Raven\Network\Tests</Filter></ClCompile>
     <None Include="Raven\Network\Tests\PHASE11_MEASUREMENTS.md"><Filter>Raven\Network\Tests</Filter></None>
     <None Include="Raven\Network\Tests\Phase11Time.csv"><Filter>Raven\Network\Tests</Filter></None>
     <None Include="Raven\Network\Tests\Phase11Memory.csv"><Filter>Raven\Network\Tests</Filter></None>
@@ -1185,78 +279,34 @@
     <None Include="Raven\Network\Tests\Phase11MemoryMetadata.json"><Filter>Raven\Network\Tests</Filter></None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Update="Raven\Diagnostics\DiagnosticSink.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
-    <ClCompile Update="Raven\Diagnostics\DiagnosticSink.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
-    <ClInclude Update="Raven\Diagnostics\BinaryTrace.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
-    <ClCompile Update="Raven\Diagnostics\BinaryTrace.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
-    <ClCompile Update="Raven\Diagnostics\Tests\DiagnosticSinkSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Diagnostics\Tests\DiagnosticSinkSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
     <None Include="Raven\Diagnostics\Tests\README.md"><Filter>Raven\\Diagnostics\\Tests</Filter></None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Update="Raven\Diagnostics\DiagnosticMetric.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
-    <ClCompile Update="Raven\Diagnostics\DiagnosticMetric.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
-    <ClInclude Update="Raven\Diagnostics\DiagnosticMeasurement.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
-    <ClCompile Update="Raven\Diagnostics\DiagnosticMeasurement.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
-    <ClInclude Update="Raven\Diagnostics\MeasurementTimeline.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
-    <ClCompile Update="Raven\Diagnostics\MeasurementTimeline.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
-    <ClCompile Update="Raven\Diagnostics\Tests\DiagnosticMeasurementSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
-    <ClCompile Update="Raven\Renderer\RHI\RHISceneMeshRenderer.cpp"><Filter>Raven\Renderer\RHI</Filter></ClCompile>
+    <ClCompile Include="Raven\Diagnostics\Tests\DiagnosticMeasurementSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Update="Raven\Diagnostics\DiagnosticValidation.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
-    <ClCompile Update="Raven\Diagnostics\DiagnosticValidation.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
-    <ClCompile Update="Raven\Diagnostics\Tests\DiagnosticSubsystemSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
-    <ClInclude Update="Raven\Renderer\RendererFrameDiagnostics.h"><Filter>Raven\Renderer</Filter></ClInclude>
-    <ClCompile Update="Raven\Renderer\RendererFrameDiagnostics.cpp"><Filter>Raven\Renderer</Filter></ClCompile>
-    <ClCompile Update="Raven\Renderer\RHI\RHIResource.cpp"><Filter>Raven\Renderer\RHI</Filter></ClCompile>
+    <ClCompile Include="Raven\Diagnostics\Tests\DiagnosticSubsystemSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Update="Raven\Diagnostics\DiagnosticEventStore.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
-    <ClInclude Update="Raven\Diagnostics\DiagnosticEventStore.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
-    <ClCompile Update="Raven\Diagnostics\Tests\DiagnosticViewerSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
-    <ClCompile Update="Raven\Editor\Panels\DiagnosticsViewModel.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
-    <ClInclude Update="Raven\Editor\Panels\DiagnosticsViewModel.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
-    <ClCompile Update="Raven\Editor\Panels\DiagnosticsRavenPanel.cpp"><Filter>Raven\Editor\Panels</Filter></ClCompile>
-    <ClInclude Update="Raven\Editor\Panels\DiagnosticsRavenPanel.h"><Filter>Raven\Editor\Panels</Filter></ClInclude>
+    <ClCompile Include="Raven\Diagnostics\Tests\DiagnosticViewerSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Raven\\Diagnostics\\Generated"><UniqueIdentifier>{48d5ac97-13c3-4f7a-a375-08fe4c77a201}</UniqueIdentifier></Filter>
-    <ClCompile Update="Raven\Diagnostics\DiagnosticMessage.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
-    <ClInclude Update="Raven\Diagnostics\DiagnosticMessage.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
-    <ClCompile Update="Raven\Diagnostics\MessageDictionary.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
-    <ClInclude Update="Raven\Diagnostics\MessageDictionary.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
-    <ClCompile Update="Raven\Diagnostics\Generated\MessageMetadata.generated.cpp"><Filter>Raven\\Diagnostics\\Generated</Filter></ClCompile>
-    <ClInclude Update="Raven\Diagnostics\Generated\MessageMetadata.generated.h"><Filter>Raven\\Diagnostics\\Generated</Filter></ClInclude>
-    <ClCompile Update="Raven\Diagnostics\Tests\DiagnosticMessageSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
-    <None Include="Raven\Diagnostics\Messages.json"><Filter>Raven\\Diagnostics</Filter></None>
-    <None Include="Raven\Diagnostics\Messages.lock.json"><Filter>Raven\\Diagnostics</Filter></None>
+    <ClCompile Include="Raven\Diagnostics\Tests\DiagnosticMessageSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Update="Raven\Diagnostics\RemoteDiagnostics.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
-    <ClInclude Update="Raven\Diagnostics\RemoteDiagnostics.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
-    <ClCompile Update="Raven\Diagnostics\RemoteProtocol.cpp"><Filter>Raven\\Diagnostics</Filter></ClCompile>
-    <ClInclude Update="Raven\Diagnostics\RemoteProtocol.h"><Filter>Raven\\Diagnostics</Filter></ClInclude>
-    <ClCompile Update="Raven\Diagnostics\Tests\DiagnosticRemoteSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
-    <ClCompile Update="Raven\Network\Windows\WindowsControlStream.cpp"><Filter>Raven\Network\Windows</Filter></ClCompile>
+    <ClCompile Include="Raven\Diagnostics\Tests\DiagnosticRemoteSelfTests.cpp"><Filter>Raven\\Diagnostics\\Tests</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Raven\UI\Rendering"><UniqueIdentifier>{37265425-7bda-4fc3-8187-f3c8ccced781}</UniqueIdentifier></Filter>
-    <ClCompile Update="Raven\UI\Rendering\UIGeometryBuilder.cpp"><Filter>Raven\UI\Rendering</Filter></ClCompile>
-    <ClInclude Update="Raven\UI\Rendering\UIGeometryBuilder.h"><Filter>Raven\UI\Rendering</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Raven\Platform\OpenGL\RHI"><UniqueIdentifier>{57b133bb-0997-47ee-9390-6e2ac50f6ce9}</UniqueIdentifier></Filter>
     <Filter Include="Tests"><UniqueIdentifier>{20c1a50f-c218-459b-9046-47f022082aab}</UniqueIdentifier></Filter>
-    <ClCompile Update="Raven\Platform\OpenGL\RHI\OpenGLCompute.cpp"><Filter>Raven\Platform\OpenGL\RHI</Filter></ClCompile>
-    <ClInclude Update="Raven\Platform\OpenGL\RHI\OpenGLCompute.h"><Filter>Raven\Platform\OpenGL\RHI</Filter></ClInclude>
-    <ClInclude Update="Raven\Renderer\RHI\RHICompute.h"><Filter>Raven\Renderer\RHI</Filter></ClInclude>
     <ClCompile Include="..\Tests\OpenGLComputeGPUIntegrationTests.cpp"><Filter>Tests</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Update="Raven\Platform\DirectX12\DX12Compute.cpp"><Filter>Raven\Platform\DirectX12</Filter></ClCompile>
-    <ClCompile Update="Raven\Platform\Vulkan\VulkanCompute.cpp"><Filter>Raven\Platform\Vulkan</Filter></ClCompile>
-    <ClInclude Update="Raven\Renderer\RHI\RHIExplicitComputeFrame.h"><Filter>Raven\Renderer\RHI</Filter></ClInclude>
-    <ClCompile Update="Raven\Renderer\RHI\RHIExplicitComputeFrame.cpp"><Filter>Raven\Renderer\RHI</Filter></ClCompile>
     <None Include="..\Tests\ComputeShaders\Smoke.hlsl"><Filter>Tests</Filter></None>
     <None Include="..\Tests\ComputeShaders\Smoke.comp"><Filter>Tests</Filter></None>
     <None Include="..\Tests\ComputeShaders\Smoke.vert"><Filter>Tests</Filter></None>
@@ -1265,16 +315,12 @@
   <ItemGroup>
     <Filter Include="Raven\Physics\Field"><UniqueIdentifier>{1cb07d0c-f991-431d-8a4f-8a06d58a8eba}</UniqueIdentifier></Filter>
     <Filter Include="Raven\Assets\Shaders"><UniqueIdentifier>{397c438f-d05c-4f20-bca7-71dbc4f0473d}</UniqueIdentifier></Filter>
-    <ClCompile Update="Raven\Physics\Field\DenseSDF.cpp"><Filter>Raven\Physics\Field</Filter></ClCompile>
-    <ClInclude Update="Raven\Physics\Field\DenseSDF.h"><Filter>Raven\Physics\Field</Filter></ClInclude>
     <None Include="Raven\Assets\Shaders\DenseSDF.comp"><Filter>Raven\Assets\Shaders</Filter></None>
     <None Include="Raven\Assets\Shaders\DenseSDF.hlsl"><Filter>Raven\Assets\Shaders</Filter></None>
     <None Include="Raven\Assets\Shaders\DenseSDF.inc"><Filter>Raven\Assets\Shaders</Filter></None>
     <ClCompile Include="..\Tests\DenseSDFGPUIntegrationTests.cpp"><Filter>Tests</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Update="Raven\Physics\Field\SparseSDF.cpp"><Filter>Raven\Physics\Field</Filter></ClCompile>
-    <ClInclude Update="Raven\Physics\Field\SparseSDF.h"><Filter>Raven\Physics\Field</Filter></ClInclude>
     <None Include="Raven\Assets\Shaders\SparseSDF.comp"><Filter>Raven\Assets\Shaders</Filter></None>
     <None Include="Raven\Assets\Shaders\SparseSDF.hlsl"><Filter>Raven\Assets\Shaders</Filter></None>
     <None Include="Raven\Assets\Shaders\SparseSDF.inc"><Filter>Raven\Assets\Shaders</Filter></None>
@@ -1284,25 +330,105 @@
     <Filter Include="Raven\Physics\Collision" />
     <Filter Include="Raven\Physics\Fluid" />
     <Filter Include="Raven\Physics\Fluid\Debug" />
-    <ClCompile Update="Raven\Physics\Collision\StaticSDFCollider.cpp"><Filter>Raven\Physics\Collision</Filter></ClCompile>
-    <ClInclude Update="Raven\Physics\Collision\StaticSDFCollider.h"><Filter>Raven\Physics\Collision</Filter></ClInclude>
-    <ClCompile Update="Raven\Physics\Fluid\GPUGridFluid.cpp"><Filter>Raven\Physics\Fluid</Filter></ClCompile>
-    <ClInclude Update="Raven\Physics\Fluid\GPUGridFluid.h"><Filter>Raven\Physics\Fluid</Filter></ClInclude>
-    <ClCompile Update="Raven\Physics\Fluid\Debug\RunGPUGridFluidDemo.cpp"><Filter>Raven\Physics\Fluid\Debug</Filter></ClCompile>
-    <ClInclude Update="Raven\Physics\Fluid\Debug\RunGPUGridFluidDemo.h"><Filter>Raven\Physics\Fluid\Debug</Filter></ClInclude>
     <None Include="Raven\Assets\Shaders\GPUGridFluid.comp"><Filter>Raven\Assets\Shaders</Filter></None>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Raven\Physics\Electromagnetism" />
-    <ClCompile Update="Raven\Physics\Electromagnetism\GridElectromagnetism.cpp"><Filter>Raven\Physics\Electromagnetism</Filter></ClCompile>
-    <ClInclude Update="Raven\Physics\Electromagnetism\GridElectromagnetism.h"><Filter>Raven\Physics\Electromagnetism</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Raven\Physics\Thermal" />
     <Filter Include="Raven\Physics\Coupling" />
-    <ClCompile Update="Raven\Physics\Thermal\GridTemperatureField.cpp"><Filter>Raven\Physics\Thermal</Filter></ClCompile>
-    <ClInclude Update="Raven\Physics\Thermal\GridTemperatureField.h"><Filter>Raven\Physics\Thermal</Filter></ClInclude>
-    <ClCompile Update="Raven\Physics\Coupling\GridThermalCoupling.cpp"><Filter>Raven\Physics\Coupling</Filter></ClCompile>
-    <ClInclude Update="Raven\Physics\Coupling\GridThermalCoupling.h"><Filter>Raven\Physics\Coupling</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Raven" />
+    <Filter Include="Raven\Animation" />
+    <Filter Include="Raven\Animation\Tests" />
+    <Filter Include="Raven\Character" />
+    <Filter Include="Raven\Character\Tests" />
+    <Filter Include="Raven\Core\Jobs" />
+    <Filter Include="Raven\Core\Jobs\Tests" />
+    <Filter Include="Raven\Core\Memory\Tests" />
+    <Filter Include="Raven\Core\Tests" />
+    <Filter Include="Raven\Diagnostics" />
+    <Filter Include="Raven\Diagnostics\Tests" />
+    <Filter Include="Raven\Gltf" />
+    <Filter Include="Raven\Gltf\Tests" />
+    <Filter Include="Raven\Physics" />
+    <Filter Include="Raven\Physics\Astro" />
+    <Filter Include="Raven\Physics\Astro\Tests" />
+    <Filter Include="Raven\Physics\Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Raven\Animation\Tests\BlendTreeRuntimeSelfTests.cpp"><Filter>Raven\Animation\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Animation\Tests\BlendTreeRuntimeSelfTests.h"><Filter>Raven\Animation\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Animation\Tests\PoseInertializerSelfTests.cpp"><Filter>Raven\Animation\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Animation\Tests\PoseInertializerSelfTests.h"><Filter>Raven\Animation\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Animation\Tests\SkeletalDeformationSelfTests.cpp"><Filter>Raven\Animation\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Animation\Tests\SkeletalDeformationSelfTests.h"><Filter>Raven\Animation\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Character\Tests\CharacterCapsuleCollisionSelfTests.cpp"><Filter>Raven\Character\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Character\Tests\CharacterCeilingCollisionSelfTests.cpp"><Filter>Raven\Character\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Character\Tests\CharacterCeilingCollisionSelfTests.h"><Filter>Raven\Character\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Character\Tests\CharacterCrushReactionSelfTests.cpp"><Filter>Raven\Character\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Character\Tests\CharacterMovingPlatformSelfTests.cpp"><Filter>Raven\Character\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Character\Tests\CharacterPhysicsGroundQuerySelfTests.cpp"><Filter>Raven\Character\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Character\Tests\CharacterRagdollRecoverySelfTests.cpp"><Filter>Raven\Character\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Character\Tests\CharacterSprintLocomotionSelfTests.h"><Filter>Raven\Character\Tests</Filter></ClInclude>
+    <ClInclude Include="Raven\Core\Containers\Benchmarks\FlatHashSetBenchmark.h"><Filter>Raven\Core\Containers\Benchmarks</Filter></ClInclude>
+    <ClCompile Include="Raven\Core\Containers\Tests\FlatHashSetSelfTests.cpp"><Filter>Raven\Core\Containers\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Core\Containers\Tests\FlatHashSetSelfTests.h"><Filter>Raven\Core\Containers\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Core\Jobs\Tests\JobSystemSelfTests.cpp"><Filter>Raven\Core\Jobs\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Core\Jobs\Tests\JobSystemSelfTests.h"><Filter>Raven\Core\Jobs\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Core\Memory\Tests\MemoryAllocatorSelfTests.cpp"><Filter>Raven\Core\Memory\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Core\Memory\Tests\MemoryAllocatorSelfTests.h"><Filter>Raven\Core\Memory\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Core\Tests\ExplicitSceneFrameSelfTests.cpp"><Filter>Raven\Core\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Core\Tests\ExplicitSceneFrameSelfTests.h"><Filter>Raven\Core\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Diagnostics\Tests\DiagnosticSelfTests.cpp"><Filter>Raven\Diagnostics\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Diagnostics\Tests\DiagnosticSelfTests.h"><Filter>Raven\Diagnostics\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Gltf\Tests\GltfAccessorSelfTests.cpp"><Filter>Raven\Gltf\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Gltf\Tests\GltfAccessorSelfTests.h"><Filter>Raven\Gltf\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Gltf\Tests\GltfNodeHierarchySelfTests.cpp"><Filter>Raven\Gltf\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Gltf\Tests\GltfNodeHierarchySelfTests.h"><Filter>Raven\Gltf\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Gltf\Tests\GltfSkinAccessorSelfTests.cpp"><Filter>Raven\Gltf\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Gltf\Tests\GltfSkinAccessorSelfTests.h"><Filter>Raven\Gltf\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Physics\Astro\Tests\AstroGravityBenchmark.cpp"><Filter>Raven\Physics\Astro\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Physics\Astro\Tests\AstroGravityBenchmark.h"><Filter>Raven\Physics\Astro\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Physics\Astro\Tests\AstroWorldSelfTests.cpp"><Filter>Raven\Physics\Astro\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Physics\Astro\Tests\AstroWorldSelfTests.h"><Filter>Raven\Physics\Astro\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Physics\Tests\CapsuleCollisionSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Physics\Tests\CoulombBenchmark.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Physics\Tests\CoulombBenchmark.h"><Filter>Raven\Physics\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Physics\Tests\ElectricPotentialFieldSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Physics\Tests\ElectricPotentialFieldSelfTests.h"><Filter>Raven\Physics\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Physics\Tests\ElectromagnetismSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Physics\Tests\ElectromagnetismSelfTests.h"><Filter>Raven\Physics\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Physics\Tests\FluidCouplingMeasurementSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Physics\Tests\FluidCouplingMeasurementSelfTests.h"><Filter>Raven\Physics\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Physics\Tests\FluidRigidBodyCouplingSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Physics\Tests\FluidSPHSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Physics\Tests\FluidWorldSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Physics\Tests\FluidWorldSelfTests.h"><Filter>Raven\Physics\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Physics\Tests\PhysicsCollisionSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Physics\Tests\PhysicsFieldSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Physics\Tests\PhysicsFieldSelfTests.h"><Filter>Raven\Physics\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Physics\Tests\PhysicsFrameAllocatorSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Physics\Tests\PhysicsSimulationWorldSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Physics\Tests\PhysicsSimulationWorldSelfTests.h"><Filter>Raven\Physics\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Physics\Tests\RagdollAnimationVelocitySelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Physics\Tests\SoftBodyIntegratedStepSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Physics\Tests\SoftBodyIntegratedStepSelfTests.h"><Filter>Raven\Physics\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Physics\Tests\SoftBodyJellySelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Physics\Tests\SoftBodyJellySurfaceSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Physics\Tests\SoftBodyParticleTriangleSelfCollisionSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Physics\Tests\SoftBodySelfCollisionSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Physics\Tests\SoftBodySpatialHashSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Physics\Tests\SoftBodyVolumeConstraintSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClCompile Include="Raven\Physics\Tests\StaticMeshTriangleBVHSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Physics\Tests\StaticMeshTriangleBVHSelfTests.h"><Filter>Raven\Physics\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Physics\Tests\TemperatureFieldSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Physics\Tests\TemperatureFieldSelfTests.h"><Filter>Raven\Physics\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Physics\Tests\ThermalWorldSelfTests.cpp"><Filter>Raven\Physics\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Physics\Tests\ThermalWorldSelfTests.h"><Filter>Raven\Physics\Tests</Filter></ClInclude>
+    <ClCompile Include="Raven\Scene\Tests\SceneLifecycleSelfTests.cpp"><Filter>Raven\Scene\Tests</Filter></ClCompile>
+    <ClInclude Include="Raven\Scene\Tests\SceneLifecycleSelfTests.h"><Filter>Raven\Scene\Tests</Filter></ClInclude>
   </ItemGroup>
 </Project>

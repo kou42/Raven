@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Raven" />
+    <Filter Include="Raven\Data" />
+    <Filter Include="Raven\Data\Formats" />
+    <Filter Include="Raven\Data\Formats\Binary" />
+    <Filter Include="Raven\Data\Formats\Json" />
+    <Filter Include="Raven\Data\Formats\MessagePack" />
+    <Filter Include="Raven\Data\Serialization" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Raven\Data\DataDocument.cpp"><Filter>Raven\Data</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\DataDocument.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\DataElement.cpp"><Filter>Raven\Data</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\DataElement.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\DataReader.cpp"><Filter>Raven\Data</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\DataReader.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClInclude Include="Raven\Data\DataToken.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\DataUtf8.cpp"><Filter>Raven\Data</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\DataUtf8.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\DataWriter.cpp"><Filter>Raven\Data</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\DataWriter.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Formats\Binary\BinaryDocument.cpp"><Filter>Raven\Data\Formats\Binary</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Formats\Binary\BinaryDocument.h"><Filter>Raven\Data\Formats\Binary</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Formats\Json\JsonParser.cpp"><Filter>Raven\Data\Formats\Json</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Formats\Json\JsonParser.h"><Filter>Raven\Data\Formats\Json</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Formats\Json\JsonWriter.cpp"><Filter>Raven\Data\Formats\Json</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Formats\Json\JsonWriter.h"><Filter>Raven\Data\Formats\Json</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Formats\MessagePack\MessagePackParser.cpp"><Filter>Raven\Data\Formats\MessagePack</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Formats\MessagePack\MessagePackParser.h"><Filter>Raven\Data\Formats\MessagePack</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\Formats\MessagePack\MessagePackWriter.cpp"><Filter>Raven\Data\Formats\MessagePack</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Formats\MessagePack\MessagePackWriter.h"><Filter>Raven\Data\Formats\MessagePack</Filter></ClInclude>
+    <ClCompile Include="Raven\Data\MutableDataDocument.cpp"><Filter>Raven\Data</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\MutableDataDocument.h"><Filter>Raven\Data</Filter></ClInclude>
+    <ClInclude Include="Raven\Data\Serialization\ParallelDeserialize.h"><Filter>Raven\Data\Serialization</Filter></ClInclude>
+    <None Include="Raven\Data\Serialization\ParallelDeserialize.inl"><Filter>Raven\Data\Serialization</Filter></None>
+    <ClCompile Include="Raven\Data\Serialization\Serialization.cpp"><Filter>Raven\Data\Serialization</Filter></ClCompile>
+    <ClInclude Include="Raven\Data\Serialization\Serialization.h"><Filter>Raven\Data\Serialization</Filter></ClInclude>
+    <None Include="Raven\Data\Serialization\Serialization.inl"><Filter>Raven\Data\Serialization</Filter></None>
+  </ItemGroup>
+</Project>

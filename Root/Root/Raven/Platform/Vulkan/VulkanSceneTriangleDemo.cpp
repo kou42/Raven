@@ -482,7 +482,8 @@ RHIFrameResult VulkanSceneTriangleDemo::DrawFrame()
     // CameraとMeshから共通Draw ItemをFrame開始前に構築します。
     // Vulkan固有のClip補正値のみBackend側で選択します。
     const std::vector<RHISceneDrawItem> drawItems = RHISceneDrawItemBuilder::Build(
-        m_Camera, m_Meshes, RHISceneDrawItemBuilder::VulkanClipCorrection());
+        m_Camera.GetViewMatrix(), m_Camera.GetProjectionMatrix(),
+        m_Meshes, RHISceneDrawItemBuilder::VulkanClipCorrection());
 
     // Contextの所有権はDemoに残し、Frame操作は共通Lifecycle境界を使用します。
     RHISceneFrameLifecycle& frame = m_Context;

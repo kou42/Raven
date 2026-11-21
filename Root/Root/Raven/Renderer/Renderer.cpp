@@ -2,7 +2,6 @@
 #include "Renderer.h"
 
 #include "RenderCommand.h"
-#include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Diagnostics/DiagnosticAPI.h"
 #include "Raven/Diagnostics/DiagnosticMeasurement.h"
@@ -12,7 +11,6 @@
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Renderer/RHI/RHIDevice.h"
 #include "Raven/Renderer/RHI/RHISceneDrawItemBuilder.h"
-#include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 
 #include <algorithm>
 #include <cassert>
@@ -356,14 +354,16 @@ void Renderer::BeginScene()
     s_TransparentQueue.clear();
 }
 
-void Renderer::EndScene()
+void Renderer::EndScene(void (*drawDebugOverlay)())
 {
     if (s_ExplicitSceneMode == true)
     {
         // Surface QueueはRuntimeのPrepareFrame()まで保持します。
         // Debug RendererはLegacy Drawを行わず、同じPrepareFrameでRHI Buffer化するCPU Line Queueへ登録します。
-        ph::PhysicsDebugRenderer::RenderRegistered();
-        AnimationDebugOverlayRenderer::RenderRegistered();
+        if (drawDebugOverlay != nullptr)
+        {
+            drawDebugOverlay();
+        }
         return;
     }
 
@@ -384,8 +384,10 @@ void Renderer::EndScene()
         // ====================================================================
         // 通常のOpaque/Transparent描画が完了した後にPhysics / Animation表示を重ねます。
         // Debug Rendererは独自Pipeline stateを持つためScene Surface Passへ分類しません。
-        ph::PhysicsDebugRenderer::RenderRegistered();
-        AnimationDebugOverlayRenderer::RenderRegistered();
+        if (drawDebugOverlay != nullptr)
+        {
+            drawDebugOverlay();
+        }
     }
 }
 

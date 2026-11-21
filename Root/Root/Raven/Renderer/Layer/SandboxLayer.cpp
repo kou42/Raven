@@ -1,6 +1,7 @@
 #include "Raven/Renderer/Layer/SandboxLayer.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/RenderCommand.h"
+#include "Raven/Scene/Scene.h"
 
 namespace Raven
 {
@@ -102,7 +103,7 @@ void SandboxLayer::OnUpdate(float dt)
         RenderCommand::DrawIndexed(m_VertexArray);
     }
 
-    Renderer::EndScene();
+    Scene::EndRenderScene();
 
 }
 

@@ -7,6 +7,7 @@
 #include "Raven/Renderer/RHI/RHIDevice.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 #include "Raven/Animation/AnimationSystem.h"
+#include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
 
 #include <cmath>
 #include <iostream>
@@ -479,6 +480,16 @@ bool Scene::PrepareRHIMeshes(RHIDevice& device)
         }
     }
     return true;
+}
+
+void Scene::EndRenderScene()
+{
+    // LegacyではSurface描画後に重ね、ExplicitではPrepareFrameまでのLine Queueへ登録します。
+    Renderer::EndScene([]()
+    {
+        ph::PhysicsDebugRenderer::RenderRegistered();
+        AnimationDebugOverlayRenderer::RenderRegistered();
+    });
 }
 
 void Scene::RenderEntities()
