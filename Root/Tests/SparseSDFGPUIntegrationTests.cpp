@@ -305,6 +305,43 @@ bool Measure(RHIComputeCommandEncoder& encoder, RHISceneFrameLifecycle* frame, G
     const auto snapshot = sparse.GetSnapshot();
     if (source.GetMode() == DenseSDFSource::Mode::Sphere)
     {
+        constexpr float untouched = 123.0f;
+        float distance = untouched;
+        if (Check(snapshot->Sample(Grid.GetCellCenter(0, 0, 0) - Grid.Spacing, distance)
+                == SparseSDFSampleStatus::OutsideGrid && distance == untouched,
+            "detailed lookup reports outside grid and preserves output") == false)
+        {
+            return false;
+        }
+        bool foundBand = false;
+        bool foundMissing = false;
+        bool foundValid = false;
+        for (std::uint32_t z = 0; z < Grid.Size[2]; ++z)
+        {
+            for (std::uint32_t y = 0; y < Grid.Size[1]; ++y)
+            {
+                for (std::uint32_t x = 0; x < Grid.Size[0]; ++x)
+                {
+                    const auto point = Grid.GetCellCenter(x, y, z);
+                    float detailed = untouched;
+                    float legacy = untouched;
+                    const auto status = snapshot->Sample(point, detailed);
+                    if (Check(snapshot->TrySample(point, legacy) == (status == SparseSDFSampleStatus::Valid)
+                            && legacy == detailed && (status == SparseSDFSampleStatus::Valid || detailed == untouched),
+                        "detailed lookup preserves the legacy read contract") == false)
+                    {
+                        return false;
+                    }
+                    foundBand |= status == SparseSDFSampleStatus::OutsideBand;
+                    foundMissing |= status == SparseSDFSampleStatus::MissingSupport;
+                    foundValid |= status == SparseSDFSampleStatus::Valid;
+                }
+            }
+        }
+        if (Check(foundBand && foundMissing && foundValid, "detailed lookup distinguishes band and missing support") == false)
+        {
+            return false;
+        }
         const auto boundary = StaticSDFBoundary::FromSnapshot(snapshot, 0.025f);
         SDFSphereContact contact{};
         const auto center = source.GetCenter() + Vec3{source.GetRadius() + 0.015f, 0, 0};

@@ -6,6 +6,7 @@
 
 namespace Raven::ph
 {
+enum class SparseSDFSampleStatus { Valid, OutsideGrid, OutsideBand, MissingSupport };
 
 // 帯域外や必要なタイルの欠損は照会失敗として返します。距離0で代用しません。
 class SparseSDFSnapshot
@@ -19,8 +20,11 @@ public:
     std::size_t GetTileCount() const;
     std::size_t GetPayloadBytes() const;
     bool IsSigned() const;
+    const DenseSDFGrid& GetGrid() const;
     bool TryGetCell(const RHIComputeExtent& cell, float& distance) const;
     bool TrySample(math::Vec3 worldPosition, float& distance) const;
+    // 距離は Valid のときだけ書き込みます。支持セル不足時は距離や符号を推定しません。
+    SparseSDFSampleStatus Sample(math::Vec3 worldPosition, float& distance) const;
 
 private:
     friend class SparseSDFUpdater;

@@ -7,6 +7,7 @@
 #include "Raven/Core/MouseCodes.h"
 #include "Raven/Assets/TextureAsset.h"
 #include "Raven/Math/MathMatrix.h"
+#include "Raven/Physics/Field/SparseSDF.h"
 #include "Raven/Renderer/Mesh/Deformation/MeshDeformationInstance.h"
 #include "Raven/Renderer/Mesh/Deformation/MeshDeformationSystem.h"
 #include "Raven/Renderer/Mesh/Deformation/WaveMeshDeformer.h"
@@ -23,9 +24,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <random>
 #include <iterator>
 #include <vector>
+#ifdef _WIN32
+#include <d3dcompiler.h>
+#include <wrl/client.h>
+#endif
 
 namespace Raven
 {
@@ -37,7 +43,60 @@ float RandomRange(float minValue, float maxValue)
     std::uniform_real_distribution<float> distribution(minValue, maxValue);
     return distribution(generator);
 }
+
+bool LoadSparseDemoShader(RHIBackend backend, RHIComputePipelineSpecification& shader)
+{
+    if (backend == RHIBackend::OpenGL)
+    {
+        auto read = [](const char* path)
+        {
+            std::ifstream stream(path, std::ios::binary);
+            return std::string(std::istreambuf_iterator<char>(stream), {});
+        };
+        shader.OpenGLSource = read("Raven/Assets/Shaders/SparseSDF.comp");
+        for (const char* name : { "DenseSDF.inc", "SparseSDF.inc" })
+        {
+            const auto include = std::string("#include ") + '"' + name + '"';
+            const auto offset = shader.OpenGLSource.find(include);
+            const auto source = read((std::string("Raven/Assets/Shaders/") + name).c_str());
+            if (offset == std::string::npos || source.empty())
+            {
+                return false;
+            }
+            shader.OpenGLSource.replace(offset, include.size(), source);
+        }
+        return true;
+    }
+#ifdef _WIN32
+    if (backend == RHIBackend::DirectX12)
+    {
+        Microsoft::WRL::ComPtr<ID3DBlob> code;
+        if (FAILED(D3DCompileFromFile(L"Raven/Assets/Shaders/SparseSDF.hlsl", nullptr,
+            D3D_COMPILE_STANDARD_FILE_INCLUDE, "CSMain", "cs_5_1", 0, 0, &code, nullptr)))
+        {
+            return false;
+        }
+        const auto* start = static_cast<const std::byte*>(code->GetBufferPointer());
+        shader.DirectX12Bytecode.assign(start, start + code->GetBufferSize());
+        return true;
+    }
+#endif
+    return false;
+}
 } // namespace
+
+struct SceneGame::SDFDemo
+{
+    std::optional<ph::DenseSDFSource> Signed;
+    std::optional<ph::DenseSDFSource> Unsigned;
+    ph::SparseSDFUpdater Updater;
+    Ref<RHIComputeCommandEncoder> Encoder;
+    RHIComputePipelineSpecification Shader;
+    bool Started = false;
+    bool Prepared = false;
+    bool InFlight = false;
+    bool Failed = false;
+};
 
 int SceneGame::ComputeOptimizedSpawnCount() const
 {
@@ -399,6 +458,105 @@ SceneGame::~SceneGame()
     DestroyPhysicsFieldDemo();
 }
 
+const char* SceneGame::GetSDFDebugStatus() const
+{
+    if (m_SDFDemo == nullptr)
+    {
+        return "Snapshot: no demo source";
+    }
+    if (m_SDFDemo->Updater.GetSnapshot() != nullptr)
+    {
+        return "Snapshot: published";
+    }
+    if (m_SDFDemo->Failed)
+    {
+        return "Snapshot: generation unavailable";
+    }
+    return m_SDFDemo->Started ? "Snapshot: readback pending" : "Snapshot: not published";
+}
+
+void SceneGame::UpdateSDFDemo()
+{
+    if (m_SDFDemo == nullptr || m_SDFDemo->Failed || m_SDFDemo->Updater.GetSnapshot() != nullptr)
+    {
+        return;
+    }
+
+    auto& demo = *m_SDFDemo;
+    if (demo.Started == false)
+    {
+        if (m_PhysicsDebugRenderer.GetSettings().ShowSparseSDF == false)
+        {
+            return;
+        }
+        demo.Started = true;
+        const auto backend = m_Application != nullptr ? m_Application->GetWindow().GetBackend() : RHIBackend::None;
+        if (LoadSparseDemoShader(backend, demo.Shader) == false)
+        {
+            demo.Failed = true;
+            return;
+        }
+        demo.Encoder = m_Application->CreateSceneComputeEncoder();
+        const auto source = ph::DenseSDFSource::CreateSphere({ 3.0f, 0.0f, 0.0f }, 1.0f);
+        const ph::DenseSDFGrid grid{ { 0.875f, -2.125f, -2.125f }, { 0.25f, 0.25f, 0.25f }, { 17, 17, 17 } };
+        if (demo.Encoder == nullptr || source == std::nullopt || demo.Updater.BeginUpdate(*source, grid, 0.55f) == false)
+        {
+            demo.Failed = true;
+            return;
+        }
+    }
+
+    if (demo.InFlight)
+    {
+        const auto status = demo.Updater.Poll();
+        if (status == ph::SparseSDFUpdateStatus::Pending)
+        {
+            return;
+        }
+        demo.InFlight = false;
+        demo.Prepared = false;
+        if (status == ph::SparseSDFUpdateStatus::Published)
+        {
+            m_PhysicsDebugRenderer.SetSparseSDFSnapshot(demo.Updater.GetSnapshot());
+            return;
+        }
+        if (status != ph::SparseSDFUpdateStatus::BatchComplete)
+        {
+            demo.Failed = true;
+            return;
+        }
+    }
+
+    constexpr std::uint32_t tileBudget = 16;
+    if (demo.Prepared == false)
+    {
+        demo.Prepared = demo.Updater.PrepareBatch(*demo.Encoder, demo.Shader, tileBudget);
+        if (demo.Prepared == false)
+        {
+            demo.Failed = true;
+            return;
+        }
+    }
+    if (Renderer::IsExplicitSceneMode() == false)
+    {
+        demo.InFlight = demo.Updater.RecordBatch(*demo.Encoder);
+        demo.Failed = demo.InFlight == false;
+        return;
+    }
+
+    // BeginFrame まで遅延するコールバックは Scene を保持しません。Scene 破棄後は記録を省きます。
+    const std::weak_ptr<SDFDemo> pending = m_SDFDemo;
+    demo.InFlight = demo.Encoder->QueueFrame([pending](RHIComputeCommandEncoder& encoder)
+    {
+        if (const auto current = pending.lock(); current != nullptr)
+        {
+            current->Failed = current->Updater.RecordBatch(encoder) == false;
+            return current->Failed == false;
+        }
+        return true;
+    });
+}
+
 void SceneGame::CreatePhysicsFieldDemo()
 {
     if (m_EnablePhysicsFieldDemo == false || m_PhysicsFieldDemo.has_value())
@@ -434,6 +592,13 @@ void SceneGame::CreatePhysicsFieldDemo()
     temperature.RegisterField(demo.SphereTemperature);
     temperature.RegisterField(demo.BoxTemperature);
     m_PhysicsDebugRenderer.SetPointGravityField(&demo.PointGravity);
+    m_SDFDemo = CreateRef<SDFDemo>();
+    m_SDFDemo->Signed = ph::DenseSDFSource::CreateSphere({ -3.0f, 0.0f, 0.0f }, 1.0f);
+    const math::Vec3 vertices[] = {{ -1.0f, -1.0f, -0.4f }, { 1.0f, -1.0f, 0.4f }, { 0.0f, 1.0f, 0.0f }};
+    const ph::DenseSDFSource::Triangle triangles[] = {{ 0, 1, 2 }};
+    m_SDFDemo->Unsigned = ph::DenseSDFSource::CreateMesh(vertices, triangles, ph::DenseSDFSource::Mode::UnsignedMesh);
+    m_PhysicsDebugRenderer.SetDenseSDFSources(
+        m_SDFDemo->Signed ? &*m_SDFDemo->Signed : nullptr, m_SDFDemo->Unsigned ? &*m_SDFDemo->Unsigned : nullptr);
 }
 
 void SceneGame::DestroyPhysicsFieldDemo()
@@ -444,6 +609,9 @@ void SceneGame::DestroyPhysicsFieldDemo()
     }
 
     // World と Debug Renderer は非所有参照だけを持つため、実体の破棄に先立って解除します。
+    m_PhysicsDebugRenderer.SetDenseSDFSources(nullptr, nullptr);
+    m_PhysicsDebugRenderer.SetSparseSDFSnapshot(nullptr);
+    m_SDFDemo.reset();
     auto& demo = *m_PhysicsFieldDemo;
     auto& system = GetPhysicsSimulationWorld().GetElectromagneticSystem();
     m_PhysicsDebugRenderer.SetPointGravityField(nullptr);
@@ -731,6 +899,7 @@ void SceneGame::OnDestroy()
 
 void SceneGame::OnUpdateGame(float dt)
 {
+    UpdateSDFDemo();
     UpdatePauseNavigation();
 
     // Pause中もUI Navigationだけは更新し、Gameplay固有処理を停止します。

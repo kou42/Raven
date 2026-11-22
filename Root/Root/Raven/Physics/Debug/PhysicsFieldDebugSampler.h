@@ -41,6 +41,7 @@ struct PhysicsFieldDebugSlice
     math::Vec3 Center{};
     PhysicsFieldSlicePlane Plane = PhysicsFieldSlicePlane::XZ;
     float Coordinate = 0.0f;
+    float SampleSpacing = Spacing;
 };
 
 struct PhysicsFieldDebugScalarSample
@@ -51,4 +52,7 @@ struct PhysicsFieldDebugScalarSample
 
 std::vector<PhysicsFieldDebugScalarSample> SamplePhysicsScalarField(
     const ScalarField& field, const PhysicsFieldDebugSlice& slice);
+
+// 行優先の格子を返します。等値線はこの順序で隣接するサンプルを参照できます。
+std::vector<math::Vec3> BuildPhysicsFieldDebugSlicePositions(const PhysicsFieldDebugSlice& slice);
 }

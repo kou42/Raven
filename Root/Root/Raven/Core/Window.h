@@ -22,6 +22,8 @@ struct WindowProps
     bool Maximized = false;
     bool Fullscreen = false;
     bool VSync = true;
+    // Compute を使うデモは 4.3 を優先し、非対応環境では従来の 3.3 で起動します。
+    bool PreferOpenGLCompute = false;
     // OpenGL補助Windowのみ使用。共有元GLFWwindowの寿命は新Windowより長く保ちます。
     void* ShareContext = nullptr;
 

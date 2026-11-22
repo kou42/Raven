@@ -16,7 +16,8 @@ namespace Raven::ph
 inline bool DrawPhysicsDebugImmediatePanel(
     UIImmediateContext& immediate, PhysicsDebugSettings& settings,
     const Ref<UIFontAtlas>& font,
-    const math::Vec2& position = math::Vec2(16.0f, 16.0f))
+    const math::Vec2& position = math::Vec2(16.0f, 16.0f),
+    const char* sdfStatus = "Snapshot: not published")
 {
     UIPanel* panel = immediate.BeginPanel(
         "physics-debug", position, math::Vec2(300.0f, 430.0f));
@@ -99,10 +100,13 @@ inline bool DrawPhysicsDebugImmediatePanel(
     fieldPanel->SetSpacing(4.0f);
     fieldPanel->SetBackgroundColor(math::Vec4(0.07f, 0.10f, 0.16f, 0.94f));
     if (immediate.Button("field-controls",
-            settings.ShowTemperatureControls ? "Vector Controls" : "Temperature Controls",
+            settings.ShowSDFControls ? "Vector Controls"
+                : (settings.ShowTemperatureControls ? "SDF Controls" : "Temperature Controls"),
             font, math::Vec2(280.0f, 28.0f)))
     {
-        settings.ShowTemperatureControls = settings.ShowTemperatureControls == false;
+        const bool nextSDF = settings.ShowTemperatureControls && settings.ShowSDFControls == false;
+        settings.ShowTemperatureControls = settings.ShowTemperatureControls == false && settings.ShowSDFControls == false;
+        settings.ShowSDFControls = nextSDF;
         changed = true;
     }
     auto addFieldSlider = [&](const char* id, const char* labelId, const char* caption,
@@ -116,6 +120,42 @@ inline bool DrawPhysicsDebugImmediatePanel(
             label->SetText(formatValue(caption, value, precision));
         }
     };
+    auto addSliceControls = [&](PhysicsFieldSlicePlane& plane, float& coordinate, bool sdf)
+    {
+        const char* planeLabel = plane == PhysicsFieldSlicePlane::XY ? "Slice XY"
+            : (plane == PhysicsFieldSlicePlane::YZ ? "Slice YZ" : "Slice XZ");
+        if (immediate.Button(sdf ? "sdf-plane" : "thermal-plane", planeLabel, font, math::Vec2(280.0f, 28.0f)))
+        {
+            plane = plane == PhysicsFieldSlicePlane::XZ ? PhysicsFieldSlicePlane::XY
+                : (plane == PhysicsFieldSlicePlane::XY ? PhysicsFieldSlicePlane::YZ : PhysicsFieldSlicePlane::XZ);
+            changed = true;
+        }
+        const char* coordinateLabel = plane == PhysicsFieldSlicePlane::XY ? "Slice Z (m)"
+            : (plane == PhysicsFieldSlicePlane::YZ ? "Slice X (m)" : "Slice Y (m)");
+        addFieldSlider(sdf ? "sdf-position" : "thermal-position",
+            sdf ? "sdf-position-label" : "thermal-position-label", coordinateLabel, coordinate, -10.0f, 10.0f, 2);
+    };
+    if (settings.ShowSDFControls)
+    {
+        const math::Vec2 controlSize{ 280.0f, 28.0f };
+        changed = immediate.Checkbox("sdf-dense-signed", "Dense Signed SDF",
+            &settings.ShowDenseSignedSDF, font, controlSize) || changed;
+        changed = immediate.Checkbox("sdf-dense-unsigned", "Dense Unsigned SDF",
+            &settings.ShowDenseUnsignedSDF, font, controlSize) || changed;
+        changed = immediate.Checkbox("sdf-sparse", "Sparse SDF",
+            &settings.ShowSparseSDF, font, controlSize) || changed;
+        addSliceControls(settings.SDFSlicePlane, settings.SDFSliceCoordinate, true);
+        addFieldSlider("sdf-range", "sdf-range-label", "Distance Range (m)",
+            settings.SDFDistanceRange, 0.05f, 2.0f, 2);
+        immediate.Text("sdf-status", sdfStatus, font);
+        immediate.Text("sdf-signed-legend", "Signed: blue inside, red outside", font);
+        immediate.Text("sdf-contour-legend", "Black/white line: zero distance", font);
+        immediate.Text("sdf-unsigned-legend", "Unsigned: cyan near, yellow far", font);
+        immediate.Text("sdf-grid-legend", "Gray: outside grid", font);
+        immediate.Text("sdf-band-legend", "Orange: outside band", font);
+        immediate.Text("sdf-support-legend", "Purple: missing support", font);
+        return immediate.EndContainer() == true && changed;
+    }
     if (settings.ShowTemperatureControls)
     {
         const math::Vec2 controlSize{ 280.0f, 28.0f };
@@ -131,19 +171,7 @@ inline bool DrawPhysicsDebugImmediatePanel(
             &settings.ShowTemperatureInfluence, font, controlSize) || changed;
         changed = immediate.Checkbox("thermal-bounds", "Region Bounds",
             &settings.ShowTemperatureBounds, font, controlSize) || changed;
-        auto& plane = settings.TemperatureSlicePlane;
-        const char* planeLabel = plane == PhysicsFieldSlicePlane::XY ? "Slice XY"
-            : (plane == PhysicsFieldSlicePlane::YZ ? "Slice YZ" : "Slice XZ");
-        if (immediate.Button("thermal-plane", planeLabel, font, controlSize))
-        {
-            plane = plane == PhysicsFieldSlicePlane::XZ ? PhysicsFieldSlicePlane::XY
-                : (plane == PhysicsFieldSlicePlane::XY ? PhysicsFieldSlicePlane::YZ : PhysicsFieldSlicePlane::XZ);
-            changed = true;
-        }
-        const char* coordinateLabel = plane == PhysicsFieldSlicePlane::XY ? "Slice Z (m)"
-            : (plane == PhysicsFieldSlicePlane::YZ ? "Slice X (m)" : "Slice Y (m)");
-        addFieldSlider("thermal-position", "thermal-position-label", coordinateLabel,
-            settings.TemperatureSliceCoordinate, -10.0f, 10.0f, 2);
+        addSliceControls(settings.TemperatureSlicePlane, settings.TemperatureSliceCoordinate, false);
         if (settings.ShowTemperatureInfluence)
         {
             immediate.Text("thermal-legend", "Purple: low   Green: high", font);
