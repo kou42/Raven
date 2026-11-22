@@ -7,6 +7,9 @@
 namespace Raven::ph
 {
 class VectorField;
+class ScalarField;
+
+enum class PhysicsFieldSlicePlane { XZ, XY, YZ };
 
 struct PhysicsFieldDebugGrid
 {
@@ -30,4 +33,22 @@ struct PhysicsFieldDebugSample
 
 std::vector<PhysicsFieldDebugSample> SamplePhysicsVectorField(
     const VectorField& field, const PhysicsFieldDebugGrid& grid);
+
+struct PhysicsFieldDebugSlice
+{
+    static constexpr int PointsPerAxis = 17;
+    static constexpr float Spacing = 0.5f;
+    math::Vec3 Center{};
+    PhysicsFieldSlicePlane Plane = PhysicsFieldSlicePlane::XZ;
+    float Coordinate = 0.0f;
+};
+
+struct PhysicsFieldDebugScalarSample
+{
+    math::Vec3 Position;
+    float Value;
+};
+
+std::vector<PhysicsFieldDebugScalarSample> SamplePhysicsScalarField(
+    const ScalarField& field, const PhysicsFieldDebugSlice& slice);
 }

@@ -70,10 +70,11 @@ private:
     // キー入力の立ち上がりのみで表示フラグを反転します。
     void UpdateToggleKeys();
     // 有効なDebug表示だけを判定し、3D World Debugと2D Overlayへ振り分けます。
-    void Render(bool showVectorFields);
+    void Render(bool isRenderedScene);
     // 3Dワイヤ表示群（AABB/OBB/Tree/Contact）を収集して描画します。
-    void RenderWorldDebug(bool showVectorFields);
+    void RenderWorldDebug(bool showVectorFields, bool showTemperatureFields);
     void AddVectorFieldDebug(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices) const;
+    void AddTemperatureFieldDebug(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices) const;
     // 2D OverlayにSolver統計と表示設定を描画します。
     void RenderOverlay();
 
