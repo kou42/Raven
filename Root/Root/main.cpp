@@ -1,4 +1,4 @@
-#ifdef _WIN32
+﻿#ifdef _WIN32
 #include <Windows.h>
 #endif
 
@@ -100,7 +100,10 @@ int main(int argc, char* argv[])
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
     int remoteResult = 0;
-    if (Raven::Diagnostics::TryRunRemoteDiagnostics(argc, argv, remoteResult) == true) { return remoteResult; }
+    if (Raven::Diagnostics::TryRunRemoteDiagnostics(argc, argv, remoteResult) == true)
+    {
+        return remoteResult;
+    }
 #endif
 
     // Backend指定を通常の起動引数へ追加します。Explicit Sceneはまだ独立Runtimeへ接続し、
@@ -140,7 +143,10 @@ int main(int argc, char* argv[])
                     std::cerr << "Unknown diagnostics subsystem: " << name << '\n';
                     return 1;
                 }
-                if (separator == std::string_view::npos) { break; }
+                if (separator == std::string_view::npos)
+                {
+                    break;
+                }
                 names.remove_prefix(separator + 1);
             }
             continue;
@@ -148,10 +154,20 @@ int main(int argc, char* argv[])
         if (backendArgument.starts_with("--diagnostics-connect="))
         {
             const auto port = std::string_view(backendArgument).substr(22);
-            unsigned parsed = 0; const auto converted = std::from_chars(port.data(), port.data() + port.size(), parsed);
-            if (converted.ec != std::errc{} || converted.ptr != port.data() + port.size() || parsed == 0 || parsed > 65535)
-            { std::cerr << "Invalid diagnostics port.\n"; return 1; }
-            diagnosticRemotePort = static_cast<std::uint16_t>(parsed); continue;
+            unsigned parsed = 0;
+            const auto converted = std::from_chars(port.data(), port.data() + port.size(), parsed);
+            if (converted.ec != std::errc{}
+                || converted.ptr != port.data() + port.size()
+                || parsed == 0
+                || parsed > 65535
+            ) {
+                std::cerr << "Invalid diagnostics port.\n";
+                return 1;
+            }
+
+            diagnosticRemotePort = static_cast<std::uint16_t>(parsed);
+            continue;
+
         }
         if (backendArgument == "--diagnostics-measurements")
         {
