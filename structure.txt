@@ -770,6 +770,10 @@ D:.
     |   |   |   |       PhysicsDebugRenderer.h
     |   |   |   |       PhysicsDebugRendererCameraContext.cpp
     |   |   |   |       PhysicsDebugSettings.h
+    |   |   |   |       PhysicsFieldDebugDraw.cpp
+    |   |   |   |       PhysicsFieldDebugDraw.h
+    |   |   |   |       PhysicsFieldDebugSampler.cpp
+    |   |   |   |       PhysicsFieldDebugSampler.h
     |   |   |   |
     |   |   |   +---Electromagnetism
     |   |   |   |   |   BarnesHutCoulombSolver.cpp

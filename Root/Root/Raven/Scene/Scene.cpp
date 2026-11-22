@@ -482,12 +482,12 @@ bool Scene::PrepareRHIMeshes(RHIDevice& device)
     return true;
 }
 
-void Scene::EndRenderScene()
+void Scene::EndRenderScene(const Scene* renderedScene)
 {
     // LegacyではSurface描画後に重ね、ExplicitではPrepareFrameまでのLine Queueへ登録します。
-    Renderer::EndScene([]()
+    Renderer::EndScene([renderedScene]()
     {
-        ph::PhysicsDebugRenderer::RenderRegistered();
+        ph::PhysicsDebugRenderer::RenderRegistered(renderedScene);
         AnimationDebugOverlayRenderer::RenderRegistered();
     });
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Raven/Physics/Debug/PhysicsDebugSettings.h"
+#include "Raven/Physics/Debug/PhysicsFieldDebugSampler.h"
 #include "Raven/UI/Immediate/UIImmediateContext.h"
 
 #include <iomanip>
@@ -83,6 +84,41 @@ inline bool DrawPhysicsDebugImmediatePanel(
     }
 
     // EndContainerの失敗は呼び出し側のFrame不均衡を示します。
+    if (immediate.EndContainer() == false)
+    {
+        return false;
+    }
+
+    // 既存 Panel の高さを保ち、重力の調整項目を横に並べます。
+    UIPanel* fieldPanel = immediate.BeginPanel("physics-field-debug",
+        position + math::Vec2(310.0f, 0.0f), math::Vec2(300.0f, 260.0f));
+    if (fieldPanel == nullptr)
+    {
+        return changed;
+    }
+    fieldPanel->SetSpacing(4.0f);
+    fieldPanel->SetBackgroundColor(math::Vec4(0.07f, 0.10f, 0.16f, 0.94f));
+    changed = immediate.Checkbox("gravity", "Gravity Field (m/s^2)",
+        &settings.ShowVectorFields, font, math::Vec2(280.0f, 28.0f)) || changed;
+    changed = immediate.Checkbox("field-bounds", "Grid Bounds",
+        &settings.ShowFieldBounds, font, math::Vec2(280.0f, 28.0f)) || changed;
+    auto addFieldSlider = [&](const char* id, const char* labelId, const char* caption,
+        float& value, float minimum, float maximum, int precision)
+    {
+        UILabel* label = immediate.Text(labelId, formatValue(caption, value, precision), font);
+        changed = immediate.SliderFloat(id, &value, minimum, maximum, math::Vec2(280.0f, 24.0f)) || changed;
+        if (label != nullptr)
+        {
+            label->SetPreferredSize(math::Vec2(280.0f, 20.0f));
+            label->SetText(formatValue(caption, value, precision));
+        }
+    };
+    addFieldSlider("grid-points", "grid-points-label", "Points per Axis", settings.FieldGridPointsPerAxis,
+        1.0f, static_cast<float>(PhysicsFieldDebugGrid::MaxPointsPerAxis), 0);
+    addFieldSlider("grid-spacing", "grid-spacing-label", "Grid Spacing (m)", settings.FieldGridSpacing,
+        PhysicsFieldDebugGrid::MinSpacing, PhysicsFieldDebugGrid::MaxSpacing, 2);
+    addFieldSlider("arrow-scale", "arrow-scale-label", "Arrow Scale", settings.GravityArrowScale,
+        0.1f, 4.0f, 2);
     return immediate.EndContainer() == true && changed;
 }
 

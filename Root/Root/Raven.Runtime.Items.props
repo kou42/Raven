@@ -86,6 +86,8 @@
     <RavenRuntimeSource Include="Raven\Physics\Coupling\GridThermalCoupling.cpp" />
     <RavenRuntimeSource Include="Raven\Physics\Debug\PhysicsDebugRenderer.cpp" />
     <RavenRuntimeSource Include="Raven\Physics\Debug\PhysicsDebugRendererCameraContext.cpp" />
+    <RavenRuntimeSource Include="Raven\Physics\Debug\PhysicsFieldDebugDraw.cpp" />
+    <RavenRuntimeSource Include="Raven\Physics\Debug\PhysicsFieldDebugSampler.cpp" />
     <RavenRuntimeSource Include="Raven\Physics\Electromagnetism\BarnesHutCoulombSolver.cpp" />
     <RavenRuntimeSource Include="Raven\Physics\Electromagnetism\CoulombForce.cpp" />
     <RavenRuntimeSource Include="Raven\Physics\Electromagnetism\ElectricField.cpp" />
@@ -310,6 +312,8 @@
     <RavenRuntimeHeader Include="Raven\Physics\Debug\PhysicsDebugOverlayFont.h" />
     <RavenRuntimeHeader Include="Raven\Physics\Debug\PhysicsDebugRenderer.h" />
     <RavenRuntimeHeader Include="Raven\Physics\Debug\PhysicsDebugSettings.h" />
+    <RavenRuntimeHeader Include="Raven\Physics\Debug\PhysicsFieldDebugDraw.h" />
+    <RavenRuntimeHeader Include="Raven\Physics\Debug\PhysicsFieldDebugSampler.h" />
     <RavenRuntimeHeader Include="Raven\Physics\Electromagnetism\BarnesHutCoulombSolver.h" />
     <RavenRuntimeHeader Include="Raven\Physics\Electromagnetism\CoulombForce.h" />
     <RavenRuntimeHeader Include="Raven\Physics\Electromagnetism\ElectricCharge.h" />

@@ -1707,7 +1707,8 @@ void Application::Run()
                 if (m_PhysicsDebugImmediatePanelEnabled == true && game != nullptr)
                 {
                     ph::DrawPhysicsDebugImmediatePanel(m_ImmediateUI,
-                        game->GetPhysicsDebugSettings(), m_PhysicsDebugImmediateFont,
+                        game->GetPhysicsDebugSettings(),
+                        m_PhysicsDebugImmediateFont != nullptr ? m_PhysicsDebugImmediateFont : m_RuntimeUIFont,
                         math::Vec2(24.0f, 300.0f));
                 }
                 if (m_ImmediateUI.EndFrame() == false)

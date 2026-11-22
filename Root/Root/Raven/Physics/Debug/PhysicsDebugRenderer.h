@@ -32,7 +32,7 @@ public:
     PhysicsDebugRenderer& operator=(const PhysicsDebugRenderer&) = delete;
 
     // 登録済みインスタンスをまとめて描画します。
-    static void RenderRegistered();
+    static void RenderRegistered(const Scene* renderedScene = nullptr);
     // 同じSceneにぶら下がるRendererへPhysicsWorld参照を配布します。
     static void BindPhysicsWorld(Scene& scene, const PhysicsWorld& physicsWorld);
 
@@ -68,9 +68,10 @@ private:
     // キー入力の立ち上がりのみで表示フラグを反転します。
     void UpdateToggleKeys();
     // 有効なDebug表示だけを判定し、3D World Debugと2D Overlayへ振り分けます。
-    void Render();
+    void Render(bool showGravityField);
     // 3Dワイヤ表示群（AABB/OBB/Tree/Contact）を収集して描画します。
-    void RenderWorldDebug();
+    void RenderWorldDebug(bool showGravityField);
+    void AddGravityFieldDebug(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices) const;
     // 2D OverlayにSolver統計と表示設定を描画します。
     void RenderOverlay();
 
