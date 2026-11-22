@@ -38,6 +38,7 @@ namespace Raven
 {
 
 class RHISceneFrameLifecycle;
+class RHIComputeCommandEncoder;
 enum class RHIFrameResult;
 class UIDockSpace;
 struct UIDockTabRestoreRecord;
@@ -344,6 +345,7 @@ public:
     const TextureAssetManager& GetTextureAssetManager() const { return m_TextureAssetManager; }
     Window& GetWindow() { return *m_Window; }
     const Window& GetWindow() const { return *m_Window; }
+    Ref<RHIComputeCommandEncoder> CreateSceneComputeEncoder();
 
     // EditorLayerはRuntime本体を借用せず、Backend非依存のViewport操作だけをApplicationへ依頼します。
     // 未対応Backendではfalse/nullptrを返し、OpenGL Framebufferへ暗黙fallbackしません。

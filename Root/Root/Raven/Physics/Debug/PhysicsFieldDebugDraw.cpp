@@ -1,4 +1,5 @@
 #include "Raven/Physics/Debug/PhysicsFieldDebugDraw.h"
+#include "Raven/Physics/Debug/PhysicsFieldDebugAdapters.h"
 
 #include <algorithm>
 #include <cmath>
@@ -57,5 +58,54 @@ bool TryGetPhysicsFieldDebugScalarColor(float value, float minimum, float maximu
         (static_cast<double>(value) - minimum) / (static_cast<double>(maximum) - minimum), 0.0, 1.0));
     color = lowColor + (highColor - lowColor) * weight;
     return true;
+}
+
+std::vector<PhysicsFieldDebugLine> BuildPhysicsSDFZeroContour(std::span<const PhysicsSDFDebugSample> samples)
+{
+    constexpr int count = PhysicsFieldDebugSlice::PointsPerAxis;
+    if (samples.size() != count * count)
+    {
+        return {};
+    }
+    constexpr math::Vec3 light{ 1.0f, 1.0f, 1.0f };
+    constexpr math::Vec3 dark{ 0.03f, 0.03f, 0.03f };
+    std::vector<PhysicsFieldDebugLine> lines;
+    for (int row = 0; row < count - 1; ++row)
+    {
+        for (int col = 0; col < count - 1; ++col)
+        {
+            const int start = row * count + col;
+            const std::array corners{ &samples[start], &samples[start + 1],
+                &samples[start + count + 1], &samples[start + count] };
+            // 欠損をまたいで境界を推定しないよう、4 頂点がそろったセルだけを処理します。
+            if (std::ranges::any_of(corners, [](const auto* sample)
+                { return sample->Status != PhysicsSDFDebugStatus::Valid; }))
+            {
+                continue;
+            }
+            // 対角線で三角形に分けると、符号が交互になるセルでも接続が一意になります。
+            for (const auto& triangle : { std::array{ 0, 1, 2 }, std::array{ 0, 2, 3 } })
+            {
+                std::array<math::Vec3, 2> intersections{};
+                int size = 0;
+                for (int edge = 0; edge < 3; ++edge)
+                {
+                    const auto& a = *corners[triangle[edge]];
+                    const auto& b = *corners[triangle[(edge + 1) % 3]];
+                    if ((a.Distance < 0.0f) != (b.Distance < 0.0f))
+                    {
+                        const float t = static_cast<float>(a.Distance / (static_cast<double>(a.Distance) - b.Distance));
+                        intersections[size++] = a.Position + (b.Position - a.Position) * t;
+                    }
+                }
+                if (size == 2 && intersections[0] != intersections[1])
+                {
+                    // 明るい床と暗い背景の両方で境界が見えるよう、明暗を交互に描きます。
+                    lines.push_back({ intersections[0], intersections[1], lines.size() % 2 == 0 ? dark : light });
+                }
+            }
+        }
+    }
+    return lines;
 }
 }

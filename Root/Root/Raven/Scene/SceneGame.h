@@ -62,6 +62,7 @@ public:
         PushLayer(CreateScope<Gltf::TerrainStaticSceneLayer>(*this));
     }
     ~SceneGame() override;
+    const char* GetSDFDebugStatus() const;
 
     // Applicationの任意Physics Debug UIがRendererと同じ設定を編集する入口です。
     ph::PhysicsDebugSettings& GetPhysicsDebugSettings()
@@ -101,6 +102,8 @@ private:
 
     void CreatePhysicsFieldDemo();
     void DestroyPhysicsFieldDemo();
+    void UpdateSDFDemo();
+    struct SDFDemo;
 
     struct SphereBody
     {
@@ -158,6 +161,7 @@ private:
     Ref<SceneGamePreparedResources> m_PreparedResources;
     bool m_EnablePhysicsFieldDemo = false;
     std::optional<PhysicsFieldDemo> m_PhysicsFieldDemo;
+    Ref<SDFDemo> m_SDFDemo;
     bool m_WasPauseKeyPressed = false;
     bool m_IsPaused = false;
     bool m_PauseRequested = false;

@@ -770,6 +770,8 @@ D:.
     |   |   |   |       PhysicsDebugRenderer.h
     |   |   |   |       PhysicsDebugRendererCameraContext.cpp
     |   |   |   |       PhysicsDebugSettings.h
+    |   |   |   |       PhysicsFieldDebugAdapters.cpp
+    |   |   |   |       PhysicsFieldDebugAdapters.h
     |   |   |   |       PhysicsFieldDebugDraw.cpp
     |   |   |   |       PhysicsFieldDebugDraw.h
     |   |   |   |       PhysicsFieldDebugSampler.cpp

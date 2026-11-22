@@ -427,9 +427,10 @@ void WindowsWindow::Init(const WindowProps& props)
     glfwWindowHint(GLFW_RESIZABLE, props.Resizable ? GLFW_TRUE : GLFW_FALSE);
     glfwWindowHint(GLFW_DECORATED, props.Decorated ? GLFW_TRUE : GLFW_FALSE);
 
+    const bool preferCompute = m_Data.Backend == RHIBackend::OpenGL && props.PreferOpenGLCompute;
     if (m_Data.Backend == RHIBackend::OpenGL)
     {
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, preferCompute ? 4 : 3);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
         glfwWindowHint(GLFW_DEPTH_BITS, 24);
@@ -453,12 +454,18 @@ void WindowsWindow::Init(const WindowProps& props)
     {
         sharedContext = static_cast<GLFWwindow*>(props.ShareContext);
     }
-    m_Window = glfwCreateWindow(
-        static_cast<int>(props.Width),
-        static_cast<int>(props.Height),
-        props.Title.c_str(),
-        nullptr,
-        sharedContext);
+    auto createWindow = [&]()
+    {
+        return glfwCreateWindow(static_cast<int>(props.Width), static_cast<int>(props.Height),
+            props.Title.c_str(), nullptr, sharedContext);
+    };
+    m_Window = createWindow();
+    if (m_Window == nullptr && preferCompute)
+    {
+        // GPU Compute が使えない環境でも Dense の CPU デバッグ表示を利用できます。
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+        m_Window = createWindow();
+    }
 
     if (m_Window == nullptr)
     {

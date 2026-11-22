@@ -241,7 +241,9 @@
     <ClCompile Include="Raven\Physics\Debug\PhysicsDebugRendererCameraContext.cpp"><Filter>Raven\Physics\Debug</Filter></ClCompile>
     <ClInclude Include="Raven\Physics\Debug\PhysicsDebugSettings.h"><Filter>Raven\Physics\Debug</Filter></ClInclude>
     <ClCompile Include="Raven\Physics\Debug\PhysicsFieldDebugDraw.cpp"><Filter>Raven\Physics\Debug</Filter></ClCompile>
+    <ClCompile Include="Raven\Physics\Debug\PhysicsFieldDebugAdapters.cpp"><Filter>Raven\Physics\Debug</Filter></ClCompile>
     <ClInclude Include="Raven\Physics\Debug\PhysicsFieldDebugDraw.h"><Filter>Raven\Physics\Debug</Filter></ClInclude>
+    <ClInclude Include="Raven\Physics\Debug\PhysicsFieldDebugAdapters.h"><Filter>Raven\Physics\Debug</Filter></ClInclude>
     <ClCompile Include="Raven\Physics\Debug\PhysicsFieldDebugSampler.cpp"><Filter>Raven\Physics\Debug</Filter></ClCompile>
     <ClInclude Include="Raven\Physics\Debug\PhysicsFieldDebugSampler.h"><Filter>Raven\Physics\Debug</Filter></ClInclude>
     <ClCompile Include="Raven\Physics\Electromagnetism\BarnesHutCoulombSolver.cpp"><Filter>Raven\Physics\Electromagnetism</Filter></ClCompile>

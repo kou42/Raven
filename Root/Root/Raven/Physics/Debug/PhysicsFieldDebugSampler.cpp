@@ -45,8 +45,7 @@ std::vector<PhysicsFieldDebugSample> SamplePhysicsVectorField(
     return samples;
 }
 
-std::vector<PhysicsFieldDebugScalarSample> SamplePhysicsScalarField(
-    const ScalarField& field, const PhysicsFieldDebugSlice& slice)
+std::vector<math::Vec3> BuildPhysicsFieldDebugSlicePositions(const PhysicsFieldDebugSlice& slice)
 {
     // 直交2軸は場の中心を基準にし、法線方向だけを指定のワールド座標に固定します。
     const int horizontal = slice.Plane == PhysicsFieldSlicePlane::YZ ? 1 : 0;
@@ -60,21 +59,36 @@ std::vector<PhysicsFieldDebugScalarSample> SamplePhysicsScalarField(
     }
 
     constexpr int count = PhysicsFieldDebugSlice::PointsPerAxis;
-    constexpr float spacing = PhysicsFieldDebugSlice::Spacing;
-    constexpr float halfExtent = spacing * (count - 1) * 0.5f;
-    std::vector<PhysicsFieldDebugScalarSample> samples;
-    samples.reserve(count * count);
+    const float spacing = std::isfinite(slice.SampleSpacing)
+        ? std::clamp(slice.SampleSpacing, PhysicsFieldDebugGrid::MinSpacing, PhysicsFieldDebugGrid::MaxSpacing)
+        : PhysicsFieldDebugSlice::Spacing;
+    const float halfExtent = spacing * (count - 1) * 0.5f;
+    std::vector<math::Vec3> positions;
+    positions.reserve(count * count);
     for (int row = 0; row < count; ++row)
     {
         position[vertical] = slice.Center[vertical] + row * spacing - halfExtent;
         for (int col = 0; col < count; ++col)
         {
             position[horizontal] = slice.Center[horizontal] + col * spacing - halfExtent;
-            const float value = field.Evaluate(position);
-            if (std::isfinite(value))
-            {
-                samples.push_back({ position, value });
-            }
+            positions.push_back(position);
+        }
+    }
+    return positions;
+}
+
+std::vector<PhysicsFieldDebugScalarSample> SamplePhysicsScalarField(
+    const ScalarField& field, const PhysicsFieldDebugSlice& slice)
+{
+    const auto positions = BuildPhysicsFieldDebugSlicePositions(slice);
+    std::vector<PhysicsFieldDebugScalarSample> samples;
+    samples.reserve(positions.size());
+    for (const auto& position : positions)
+    {
+        const float value = field.Evaluate(position);
+        if (std::isfinite(value))
+        {
+            samples.push_back({ position, value });
         }
     }
     return samples;

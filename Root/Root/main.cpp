@@ -592,6 +592,7 @@ int main(int argc, char* argv[])
     Raven::ApplicationSpecification applicationSpecification{};
     applicationSpecification.EnablePhysicsDebugImmediatePanel = physicsFieldDebug;
     applicationSpecification.WindowProperties.Backend = applicationBackend;
+    applicationSpecification.WindowProperties.PreferOpenGLCompute = physicsFieldDemo;
     // Dictionaryの表示文に必要な文字だけをAtlasへ登録します。引数の任意文字列は対象外です。
     for (const auto& definition : Raven::Diagnostics::GetMessageDefinitions())
     {

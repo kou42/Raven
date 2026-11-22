@@ -7,6 +7,12 @@
 #include "../Renderer/Renderer.h"
 #include "Raven/Renderer/RHI/RHISceneFrameLifecycle.h"
 #include "Raven/Renderer/RHI/RHIExplicitSceneRuntimeFactory.h"
+#include "Raven/Renderer/RHI/RHIDevice.h"
+#include "Raven/Renderer/RenderCommand.h"
+#ifdef _WIN32
+#include "Raven/Platform/DirectX12/DX12SceneContext.h"
+#include "Raven/Platform/DirectX12/DX12SceneRHIDevice.h"
+#endif
 #include "Raven/UI/Screens/LoadingScreen.h"
 #include "Raven/UI/Rendering/UIRenderer.h"
 #include "Raven/UI/Text/UIFontAtlasBuilder.h"
@@ -67,6 +73,23 @@ UIKey ToUIKey(int keyCode)
 Application::Application()
     : Application(ApplicationSpecification{})
 {
+}
+
+Ref<RHIComputeCommandEncoder> Application::CreateSceneComputeEncoder()
+{
+#ifdef _WIN32
+    if (auto* context = dynamic_cast<DX12SceneContext*>(m_SceneFrame); context != nullptr)
+    {
+        // Encoder は Device アダプターを所有せず、既存の Scene Context にフレーム作業を渡します。
+        DX12SceneRHIDevice device(*context);
+        return device.CreateComputeCommandEncoder();
+    }
+#endif
+    if (auto* device = RenderCommand::GetDevice(); device != nullptr)
+    {
+        return device->CreateComputeCommandEncoder();
+    }
+    return nullptr;
 }
 
 Application::Application(const ApplicationSpecification& specification)
@@ -1709,7 +1732,7 @@ void Application::Run()
                     ph::DrawPhysicsDebugImmediatePanel(m_ImmediateUI,
                         game->GetPhysicsDebugSettings(),
                         m_PhysicsDebugImmediateFont != nullptr ? m_PhysicsDebugImmediateFont : m_RuntimeUIFont,
-                        math::Vec2(24.0f, 300.0f));
+                        math::Vec2(24.0f, 300.0f), game->GetSDFDebugStatus());
                 }
                 if (m_ImmediateUI.EndFrame() == false)
                 {

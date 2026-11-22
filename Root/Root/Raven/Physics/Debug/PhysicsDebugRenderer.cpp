@@ -9,11 +9,14 @@
 #include <vector>
 
 #include "Raven/Core/Input.h"
+#include "Raven/Core/CPUProfiler.h"
 #include "Raven/Core/KeyCodes.h"
 #include "Raven/Physics/Collision/DynamicAABBTreeValidation.h"
 #include "Raven/Physics/Debug/PhysicsDebugOverlayFont.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 #include "Raven/Physics/Debug/PhysicsFieldDebugDraw.h"
+#include "Raven/Physics/Debug/PhysicsFieldDebugAdapters.h"
+#include "Raven/Physics/Field/SparseSDF.h"
 #include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Physics/Thermal/TemperatureFieldRegistry.h"
@@ -101,6 +104,17 @@ void PhysicsDebugRenderer::SetPointGravityField(const PointGravityField* field)
     m_PointGravityField = field;
 }
 
+void PhysicsDebugRenderer::SetDenseSDFSources(const DenseSDFSource* signedSource, const DenseSDFSource* unsignedSource)
+{
+    m_DenseSignedSDF = signedSource;
+    m_DenseUnsignedSDF = unsignedSource;
+}
+
+void PhysicsDebugRenderer::SetSparseSDFSnapshot(Ref<const SparseSDFSnapshot> snapshot)
+{
+    m_SparseSDF = std::move(snapshot);
+}
+
 void PhysicsDebugRenderer::BindPhysicsWorld(Scene& scene, const PhysicsWorld& world)
 {
     for (auto* renderer : Registry())
@@ -179,6 +193,7 @@ void PhysicsDebugRenderer::Render(bool isRenderedScene)
 
     const bool showVectorFields = isRenderedScene && m_Settings.HasVisibleVectorField();
     const bool showTemperatureFields = isRenderedScene && m_Settings.HasVisibleTemperatureField();
+    const bool showSDF = isRenderedScene && m_Settings.HasVisibleSDF();
     const bool showWorld = m_Settings.ShowAABB
         || m_Settings.ShowOBB
         || m_Settings.ShowFatAABB
@@ -187,7 +202,8 @@ void PhysicsDebugRenderer::Render(bool isRenderedScene)
         || m_Settings.ShowContactPoints
         || m_Settings.ShowContactNormals
         || showVectorFields
-        || showTemperatureFields;
+        || showTemperatureFields
+        || showSDF;
 
     if (showWorld == false && m_Settings.ShowSolverStatistics == false)
     {
@@ -209,7 +225,7 @@ void PhysicsDebugRenderer::Render(bool isRenderedScene)
         // BeginScene(Camera)されていないSandbox等では描画せず、前回Cameraの使い回しを防ぎます。
         if (Renderer::GetCameraContext().Valid)
         {
-            RenderWorldDebug(showVectorFields, showTemperatureFields);
+            RenderWorldDebug(showVectorFields, showTemperatureFields, showSDF);
         }
     }
 
@@ -219,7 +235,7 @@ void PhysicsDebugRenderer::Render(bool isRenderedScene)
     }
 }
 
-void PhysicsDebugRenderer::RenderWorldDebug(bool showVectorFields, bool showTemperatureFields)
+void PhysicsDebugRenderer::RenderWorldDebug(bool showVectorFields, bool showTemperatureFields, bool showSDF)
 {
     std::vector<DebugVertex> vertices;
     std::vector<uint32_t> indices;
@@ -346,6 +362,10 @@ void PhysicsDebugRenderer::RenderWorldDebug(bool showVectorFields, bool showTemp
     if (showTemperatureFields == true)
     {
         AddTemperatureFieldDebug(vertices, indices);
+    }
+    if (showSDF == true)
+    {
+        AddSDFDebug(vertices, indices);
     }
 
     // Renderer::BeginScene(Camera)で設定されたCamera Contextを利用します。
@@ -562,6 +582,84 @@ void PhysicsDebugRenderer::AddTemperatureFieldDebug(std::vector<DebugVertex>& ve
                 { slice.Center - box->GetHalfExtents(), slice.Center + box->GetHalfExtents() }, boundsColor);
         }
     }
+}
+
+void PhysicsDebugRenderer::AddSDFDebug(std::vector<DebugVertex>& vertices,
+    std::vector<uint32_t>& indices) const
+{
+    RAVEN_PROFILE_SCOPE("Physics.Debug.SDF");
+    const auto firstIndex = indices.size();
+    std::size_t sampleCount = 0;
+    PhysicsFieldDebugSlice slice;
+    slice.Plane = m_Settings.SDFSlicePlane;
+    slice.Coordinate = m_Settings.SDFSliceCoordinate;
+    constexpr float spacing = 0.25f;
+    slice.SampleSpacing = spacing;
+    const float range = std::isfinite(m_Settings.SDFDistanceRange) && m_Settings.SDFDistanceRange > 0.0f
+        ? m_Settings.SDFDistanceRange : 0.75f;
+
+    auto drawSlice = [&](const auto& source, bool signedDistance)
+    {
+        const auto positions = BuildPhysicsFieldDebugSlicePositions(slice);
+        sampleCount += positions.size();
+        std::vector<PhysicsSDFDebugSample> samples;
+        samples.reserve(positions.size());
+        for (const auto& position : positions)
+        {
+            const auto sample = SamplePhysicsDebugSDF(source, position);
+            samples.push_back(sample);
+            math::Vec3 color;
+            switch (sample.Status)
+            {
+            case PhysicsSDFDebugStatus::Valid:
+                if (signedDistance)
+                {
+                    const math::Vec3 extreme = sample.Distance < 0.0f
+                        ? math::Vec3{ 0.15f, 0.35f, 1.0f } : math::Vec3{ 1.0f, 0.23f, 0.12f };
+                    TryGetPhysicsFieldDebugScalarColor(std::abs(sample.Distance), 0.0f, range,
+                        { 0.85f, 0.85f, 0.85f }, extreme, color);
+                }
+                else
+                {
+                    TryGetPhysicsFieldDebugScalarColor(sample.Distance, 0.0f, range,
+                        { 0.1f, 0.95f, 0.85f }, { 0.95f, 0.95f, 0.1f }, color);
+                }
+                break;
+            case PhysicsSDFDebugStatus::OutsideGrid: color = { 0.45f, 0.45f, 0.45f }; break;
+            case PhysicsSDFDebugStatus::OutsideBand: color = { 1.0f, 0.6f, 0.1f }; break;
+            case PhysicsSDFDebugStatus::MissingSupport: color = { 0.65f, 0.25f, 1.0f }; break;
+            case PhysicsSDFDebugStatus::Invalid: continue;
+            }
+            AddPointMarker(vertices, indices, position, spacing * 0.19f, color);
+        }
+        if (signedDistance)
+        {
+            for (const auto& line : BuildPhysicsSDFZeroContour(samples))
+            {
+                AddLine(vertices, indices, line.Start, line.End, line.Color);
+            }
+        }
+    };
+
+    if (m_Settings.ShowDenseSignedSDF && m_DenseSignedSDF != nullptr)
+    {
+        slice.Center = m_DenseSignedSDF->GetCenter();
+        drawSlice(*m_DenseSignedSDF, true);
+    }
+    if (m_Settings.ShowDenseUnsignedSDF && m_DenseUnsignedSDF != nullptr)
+    {
+        slice.Center = {};
+        drawSlice(*m_DenseUnsignedSDF, false);
+    }
+    if (m_Settings.ShowSparseSDF && m_SparseSDF != nullptr)
+    {
+        const auto& grid = m_SparseSDF->GetGrid();
+        slice.Center = (grid.GetCellCenter(0, 0, 0)
+            + grid.GetCellCenter(grid.Size[0] - 1, grid.Size[1] - 1, grid.Size[2] - 1)) * 0.5f;
+        drawSlice(*m_SparseSDF, m_SparseSDF->IsSigned());
+    }
+    CPUProfiler::Get().AddCounter("Physics.Debug.SDF.Samples", static_cast<double>(sampleCount));
+    CPUProfiler::Get().AddCounter("Physics.Debug.SDF.Lines", static_cast<double>((indices.size() - firstIndex) / 2));
 }
 
 void PhysicsDebugRenderer::RenderOverlay()

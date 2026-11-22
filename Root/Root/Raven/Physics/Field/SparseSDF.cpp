@@ -49,6 +49,7 @@ bool ClipBox(const DenseSDFGrid& grid, Vec3 low, Vec3 high,
 std::uint64_t SparseSDFSnapshot::GetGeneration() const { return m_Generation; }
 std::size_t SparseSDFSnapshot::GetTileCount() const { return m_Tiles.size(); }
 bool SparseSDFSnapshot::IsSigned() const { return m_Signed; }
+const DenseSDFGrid& SparseSDFSnapshot::GetGrid() const { return m_Grid; }
 std::size_t SparseSDFSnapshot::GetPayloadBytes() const
 {
     return m_Tiles.size() * (sizeof(Tile) + sizeof(RHIComputeExtent));
@@ -90,9 +91,14 @@ bool SparseSDFSnapshot::TryGetCell(const RHIComputeExtent& cell, float& distance
 
 bool SparseSDFSnapshot::TrySample(Vec3 p, float& distance) const
 {
+    return Sample(p, distance) == SparseSDFSampleStatus::Valid;
+}
+
+SparseSDFSampleStatus SparseSDFSnapshot::Sample(Vec3 p, float& distance) const
+{
     if (m_Grid.GetVoxelCount() == 0)
     {
-        return false;
+        return SparseSDFSampleStatus::OutsideGrid;
     }
     RHIComputeExtent lo{}, hi{};
     Vec3 fraction{};
@@ -102,7 +108,7 @@ bool SparseSDFSnapshot::TrySample(Vec3 p, float& distance) const
     {
         if (std::isfinite(p[axis]) == false || p[axis] < first[axis] || p[axis] > last[axis])
         {
-            return false;
+            return SparseSDFSampleStatus::OutsideGrid;
         }
         // world-space側で領域を判定済みです。逆変換の端で生じる丸めだけを吸収します。
         const double coordinate = std::clamp(
@@ -128,7 +134,7 @@ bool SparseSDFSnapshot::TrySample(Vec3 p, float& distance) const
                 float sample = 0.0f;
                 if (TryGetSupportCell({x ? hi[0] : lo[0], y ? hi[1] : lo[1], z ? hi[2] : lo[2]}, sample) == false)
                 {
-                    return false;
+                    return SparseSDFSampleStatus::MissingSupport;
                 }
                 value += sample * weight;
             }
@@ -136,10 +142,10 @@ bool SparseSDFSnapshot::TrySample(Vec3 p, float& distance) const
     }
     if (std::abs(value) > m_Band)
     {
-        return false;
+        return SparseSDFSampleStatus::OutsideBand;
     }
     distance = value;
-    return true;
+    return SparseSDFSampleStatus::Valid;
 }
 
 SparseSDFUpdater::Candidates SparseSDFUpdater::BuildCandidates(

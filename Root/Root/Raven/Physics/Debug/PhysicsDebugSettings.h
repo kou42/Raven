@@ -52,6 +52,19 @@ struct PhysicsDebugSettings
     float TemperatureMinimum = DefaultTemperatureMinimum;
     float TemperatureMaximum = DefaultTemperatureMaximum;
 
+    bool ShowSDFControls = false;
+    bool ShowDenseSignedSDF = false;
+    bool ShowDenseUnsignedSDF = false;
+    bool ShowSparseSDF = false;
+    PhysicsFieldSlicePlane SDFSlicePlane = PhysicsFieldSlicePlane::XY;
+    float SDFSliceCoordinate = 0.0f;
+    float SDFDistanceRange = 0.75f;
+
+    bool HasVisibleSDF() const
+    {
+        return ShowDenseSignedSDF || ShowDenseUnsignedSDF || ShowSparseSDF;
+    }
+
     bool HasVisibleTemperatureField() const
     {
         return ShowUniformTemperatureField || ShowGradientTemperatureField

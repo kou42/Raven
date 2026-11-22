@@ -3,9 +3,11 @@
 #include "Raven/Physics/Debug/PhysicsFieldDebugSampler.h"
 
 #include <array>
+#include <span>
 
 namespace Raven::ph
 {
+struct PhysicsSDFDebugSample;
 struct PhysicsFieldDebugLine
 {
     math::Vec3 Start;
@@ -25,4 +27,6 @@ bool BuildPhysicsFieldDebugArrow(const PhysicsFieldDebugSample& sample, const Ph
 
 bool TryGetPhysicsFieldDebugScalarColor(float value, float minimum, float maximum,
     const math::Vec3& lowColor, const math::Vec3& highColor, math::Vec3& color);
+
+std::vector<PhysicsFieldDebugLine> BuildPhysicsSDFZeroContour(std::span<const PhysicsSDFDebugSample> samples);
 }
