@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <iomanip>
 #include <sstream>
@@ -10,6 +11,7 @@
 #include "Raven/Physics/Collision/DynamicAABBTreeValidation.h"
 #include "Raven/Physics/Debug/PhysicsDebugOverlayFont.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
+#include "Raven/Physics/Debug/PhysicsFieldDebugDraw.h"
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
@@ -54,13 +56,14 @@ PhysicsDebugRenderer::~PhysicsDebugRenderer()
         registry.end());
 }
 
-void PhysicsDebugRenderer::RenderRegistered()
+void PhysicsDebugRenderer::RenderRegistered(const Scene* renderedScene)
 {
     for (auto* renderer : Registry())
     {
         if (renderer != nullptr)
         {
-            renderer->Render();
+            // Field の取得先を現在のカメラを設定した Scene に限定します。
+            renderer->Render(renderer->m_Scene == renderedScene && renderer->m_Settings.ShowVectorFields);
         }
     }
 }
@@ -132,7 +135,7 @@ void PhysicsDebugRenderer::UpdateToggleKeys()
     toggle(Key::N, m_Settings.ShowContactNormals, m_WasContactNormalKeyPressed);
 }
 
-void PhysicsDebugRenderer::Render()
+void PhysicsDebugRenderer::Render(bool showGravityField)
 {
     UpdateToggleKeys();
 
@@ -147,7 +150,8 @@ void PhysicsDebugRenderer::Render()
         || m_Settings.ShowDynamicAABBTree
         || m_Settings.ShowBroadPhasePairs
         || m_Settings.ShowContactPoints
-        || m_Settings.ShowContactNormals;
+        || m_Settings.ShowContactNormals
+        || showGravityField;
 
     if (showWorld == false && m_Settings.ShowSolverStatistics == false)
     {
@@ -169,7 +173,7 @@ void PhysicsDebugRenderer::Render()
         // BeginScene(Camera)されていないSandbox等では描画せず、前回Cameraの使い回しを防ぎます。
         if (Renderer::GetCameraContext().Valid)
         {
-            RenderWorldDebug();
+            RenderWorldDebug(showGravityField);
         }
     }
 
@@ -179,7 +183,7 @@ void PhysicsDebugRenderer::Render()
     }
 }
 
-void PhysicsDebugRenderer::RenderWorldDebug()
+void PhysicsDebugRenderer::RenderWorldDebug(bool showGravityField)
 {
     std::vector<DebugVertex> vertices;
     std::vector<uint32_t> indices;
@@ -299,10 +303,52 @@ void PhysicsDebugRenderer::RenderWorldDebug()
         }
     }
 
+    if (showGravityField == true)
+    {
+        AddGravityFieldDebug(vertices, indices);
+    }
+
     // Renderer::BeginScene(Camera)で設定されたCamera Contextを利用します。
     // Scene View / Game Viewのどちらでも同じDebug Renderer実装を共有できます。
     const RendererCameraContext& cameraContext = Renderer::GetCameraContext();
     SubmitLines(vertices, indices, cameraContext.View, cameraContext.Projection);
+}
+
+void PhysicsDebugRenderer::AddGravityFieldDebug(std::vector<DebugVertex>& vertices,
+    std::vector<uint32_t>& indices) const
+{
+    PhysicsFieldDebugGrid grid;
+    const float points = m_Settings.FieldGridPointsPerAxis;
+    if (std::isfinite(points))
+    {
+        grid.PointsPerAxis = static_cast<int>(std::round(std::clamp(
+            points, 1.0f, static_cast<float>(PhysicsFieldDebugGrid::MaxPointsPerAxis))));
+    }
+    grid.Spacing = m_Settings.FieldGridSpacing;
+    const float halfExtent = grid.GetHalfExtent();
+    if (m_Settings.ShowFieldBounds && halfExtent > 0.0f)
+    {
+        const math::Vec3 extent{ halfExtent, halfExtent, halfExtent };
+        AddAABB(vertices, indices, { grid.Center - extent, grid.Center + extent }, { 0.4f, 0.7f, 0.8f });
+    }
+
+    // 標準重力で 0.5 m の矢印とし、倍率や加速度を上げても格子間隔を超えないようにします。
+    constexpr float referenceGravity = 9.81f;
+    constexpr float baseArrowLength = 0.5f;
+    const float maxArrowLength = 0.8f * grid.GetSpacing();
+    const auto& gravity = static_cast<const Scene&>(*m_Scene).GetPhysicsWorld().GetGravityField();
+    for (const auto& sample : SamplePhysicsVectorField(gravity, grid))
+    {
+        std::array<PhysicsFieldDebugLine, 3> lines;
+        if (BuildPhysicsFieldDebugArrow(sample, referenceGravity,
+                baseArrowLength * m_Settings.GravityArrowScale, maxArrowLength, lines))
+        {
+            for (const auto& line : lines)
+            {
+                AddLine(vertices, indices, line.Start, line.End, line.Color);
+            }
+        }
+    }
 }
 
 void PhysicsDebugRenderer::RenderOverlay()
@@ -374,6 +420,8 @@ void PhysicsDebugRenderer::RenderOverlay()
     addToggleLine("P", "BROAD PAIRS", m_Settings.ShowBroadPhasePairs);
     addToggleLine("C", "CONTACT POINT", m_Settings.ShowContactPoints);
     addToggleLine("N", "CONTACT NORMAL", m_Settings.ShowContactNormals);
+    addLine("GRAVITY FIELD: " + OnOff(m_Settings.ShowVectorFields),
+        m_Settings.ShowVectorFields ? onColor : offColor);
 
     SubmitLines(vertices, indices, math::Mat4::Identity(), math::Mat4::Identity());
 }
@@ -415,6 +463,8 @@ void PhysicsDebugRenderer::SubmitLines(
     vertexArray->AddVertexBuffer(vertexBuffer);
     vertexArray->SetIndexBuffer(indexBuffer);
 
+    // 線分頂点は world-space（Overlay は NDC）のため、共通 Shader の Model を単位行列にします。
+    m_Material->SetUniform("u_Model", math::Mat4::Identity());
     m_Material->SetUniform("u_View", view);
     m_Material->SetUniform("u_Projection", projection);
     m_Material->SetUniform("u_Tint", math::Vec3{ 1.0f, 1.0f, 1.0f });

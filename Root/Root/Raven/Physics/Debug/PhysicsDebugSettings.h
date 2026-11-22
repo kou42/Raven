@@ -22,6 +22,12 @@ struct PhysicsDebugSettings
 
     float ContactNormalLength = 0.5f;
     float ContactPointRadius = 0.03f;
+
+    bool ShowVectorFields = false;
+    bool ShowFieldBounds = true;
+    float FieldGridPointsPerAxis = 7.0f;
+    float FieldGridSpacing = 1.0f;
+    float GravityArrowScale = 1.0f;
 };
 
 } // namespace Raven::ph

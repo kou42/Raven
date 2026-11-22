@@ -73,7 +73,7 @@ public:
     const T* FindLayer() const;
 
     void RenderEntities();
-    static void EndRenderScene();
+    static void EndRenderScene(const Scene* renderedScene = nullptr);
 
     // Explicit RHI描画のFrame開始前に、Entityが共有するMeshのGPU Bufferを準備します。
     // SceneはBackendを知らず、呼び出し側がScene Contextと同じDeviceを渡します。

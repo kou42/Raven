@@ -89,6 +89,7 @@ int main(int argc, char* argv[])
 {
     Raven::RHIBackend applicationBackend = Raven::RHIBackend::OpenGL;
     bool uiMigrationTest = false;
+    bool physicsFieldDebug = false;
     bool editorBackendComparison = false;
     bool diagnosticMeasurements = false;
     std::uint16_t diagnosticRemotePort = 0;
@@ -404,6 +405,11 @@ int main(int argc, char* argv[])
         {
             return Raven::ph::tests::RunCoulombBenchmark();
         }
+        if (backendArgument == "--physics-field-debug")
+        {
+            physicsFieldDebug = true;
+            continue;
+        }
         // UI単体検証ではRaven UI Demoのみを起動し、Editor/Scene依存を隔離します。
         // 現段階ではOpenGLでのみ独立検証し、Explicit Backendは別途GPU検証します。
         if (backendArgument == "--ui-migration-test")
@@ -582,6 +588,7 @@ int main(int argc, char* argv[])
     }
     Raven::Diagnostics::SetMeasurementsEnabled(diagnosticMeasurements);
     Raven::ApplicationSpecification applicationSpecification{};
+    applicationSpecification.EnablePhysicsDebugImmediatePanel = physicsFieldDebug;
     applicationSpecification.WindowProperties.Backend = applicationBackend;
     // Dictionaryの表示文に必要な文字だけをAtlasへ登録します。引数の任意文字列は対象外です。
     for (const auto& definition : Raven::Diagnostics::GetMessageDefinitions())

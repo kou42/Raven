@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include "Raven/Core/Base.h"
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Renderer/Pipeline/Pipeline.h"
@@ -78,7 +80,7 @@ public:
     // Camera Contextは無効化されるため、Camera依存のDebug描画は実行されません。
     static void BeginScene();
     // Debug描画は呼び出し元が同期的に渡し、Rendererはコールバックを保持しません。
-    static void EndScene(void (*drawDebugOverlay)() = nullptr);
+    static void EndScene(const std::function<void()>& drawDebugOverlay = {});
 
     // Explicit RuntimeではEndScene時にLegacy描画せず、QueueをPrepareFrameまで保持します。
     static void SetExplicitSceneMode(bool enabled);

@@ -354,7 +354,7 @@ void Renderer::BeginScene()
     s_TransparentQueue.clear();
 }
 
-void Renderer::EndScene(void (*drawDebugOverlay)())
+void Renderer::EndScene(const std::function<void()>& drawDebugOverlay)
 {
     if (s_ExplicitSceneMode == true)
     {

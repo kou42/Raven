@@ -890,7 +890,7 @@ void SceneGame::RenderScene(const Camera& camera)
             world, entity.GetIndex());
     }
 
-    Scene::EndRenderScene();
+    Scene::EndRenderScene(this);
 
     for (auto& layer : m_layers)
     {
