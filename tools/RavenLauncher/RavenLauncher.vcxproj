@@ -53,4 +53,9 @@
     <ClInclude Include="SolutionBuild.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="CopyLauncherToTools" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Copy SourceFiles="$(TargetPath)"
+          DestinationFiles="$(MSBuildProjectDirectory)\..\$(TargetFileName)"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>

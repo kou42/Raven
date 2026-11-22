@@ -5,7 +5,7 @@ Raven の Git 更新、Visual Studio プロジェクト同期、ビルド、VS20
 ## ビルドと初回設定
 
 1. Visual Studio 2026 Installer で C++ デスクトップ開発、Raven が指定する MSVC v143 ツールセット、Windows SDK を用意します。Git for Windows の `git.exe` を PATH に登録します。
-2. VS2026 で `RavenLauncher.vcxproj` を開いて x64 の Debug または Release をビルドします。実行ファイルはプロジェクト配下の `out/x64/Debug/RavenLauncher.exe` または `out/x64/Release/RavenLauncher.exe` です。
+2. VS2026 で `RavenLauncher.vcxproj` を開いて x64 の Debug または Release をビルドします。成功すると `tools/RavenLauncher.exe` が更新されます。構成別の出力はプロジェクト配下の `out/x64/Debug/` と `out/x64/Release/` にあります。
 3. `Setup...` で Raven のチェックアウトルートを選びます。既定のソリューションは `Root/Root.sln` です。別のソリューションを使う場合はリポジトリ相対パスで入力し、`Load Configs` で構成を再読み込みします。
 4. `Diagnose` で Git、ソリューション、Visual Studio 2026、MSBuild を確認します。Raven の既定ソリューションでは、選択構成に必要な MSVC と Windows SDK も確認します。診断はビルドや Git の更新を行わず、結果を画面とログに表示します。
 
