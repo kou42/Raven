@@ -90,6 +90,7 @@ int main(int argc, char* argv[])
     Raven::RHIBackend applicationBackend = Raven::RHIBackend::OpenGL;
     bool uiMigrationTest = false;
     bool physicsFieldDebug = false;
+    bool physicsFieldDemo = false;
     bool editorBackendComparison = false;
     bool diagnosticMeasurements = false;
     std::uint16_t diagnosticRemotePort = 0;
@@ -405,9 +406,10 @@ int main(int argc, char* argv[])
         {
             return Raven::ph::tests::RunCoulombBenchmark();
         }
-        if (backendArgument == "--physics-field-debug")
+        if (backendArgument == "--physics-field-debug" || backendArgument == "--physics-field-demo")
         {
             physicsFieldDebug = true;
+            physicsFieldDemo = physicsFieldDemo || backendArgument == "--physics-field-demo";
             continue;
         }
         // UI単体検証ではRaven UI Demoのみを起動し、Editor/Scene依存を隔離します。
@@ -699,9 +701,9 @@ int main(int argc, char* argv[])
     // Cloth / Jelly / Fluid LayerはApplicationからActive Sceneを借用するため、すべてSetScene()後に登録します。
     const bool gameSceneRegistered = app.RegisterScene(
         "Game",
-        [&app]()
+        [&app, physicsFieldDemo]()
         {
-            return Raven::CreateScope<Raven::SceneGame>(&app);
+            return Raven::CreateScope<Raven::SceneGame>(&app, nullptr, physicsFieldDemo);
         });
     const bool titleSceneRegistered = app.RegisterScene(
         "Title",

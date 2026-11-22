@@ -7,10 +7,15 @@
 #include "Raven/Renderer/Material/Material.h"
 #include "Raven/Math/MathMatrix.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
+#include "Raven/Physics/Electromagnetism/ElectricField.h"
+#include "Raven/Physics/Electromagnetism/MagneticField.h"
+#include "Raven/Physics/Field/GravityField.h"
+
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
 #include "Raven/Gltf/Debug/HumanSkinningDebugLayer.h"
 #include "Raven/Gltf/StaticSceneSpawner.h"
 
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -39,9 +44,11 @@ class SceneGame : public Scene, public SceneViewportRenderer
 public:
     explicit SceneGame(
         Application* application = nullptr,
-        Ref<SceneGamePreparedResources> preparedResources = nullptr)
+        Ref<SceneGamePreparedResources> preparedResources = nullptr,
+        bool enablePhysicsFieldDemo = false)
         : m_Application(application)
         , m_PreparedResources(std::move(preparedResources))
+        , m_EnablePhysicsFieldDemo(enablePhysicsFieldDemo)
         , m_PhysicsDebugRenderer(*this)
         , m_AnimationDebugRenderer(*this)
     {
@@ -53,6 +60,7 @@ public:
         // Raven/Assets/Models/Terrain.glb が未配置なら既存検証Sceneを変更せずskipします。
         PushLayer(CreateScope<Gltf::TerrainStaticSceneLayer>(*this));
     }
+    ~SceneGame() override;
 
     // Applicationの任意Physics Debug UIがRendererと同じ設定を編集する入口です。
     ph::PhysicsDebugSettings& GetPhysicsDebugSettings()
@@ -77,6 +85,18 @@ protected:
     bool ShouldUpdateSimulation() const override { return m_IsPaused == false; }
 
 private:
+    struct PhysicsFieldDemo
+    {
+        ph::PointGravityField PointGravity;
+        ph::UniformElectricField UniformElectric;
+        ph::PointChargeElectricField PointCharge;
+        ph::UniformMagneticField UniformMagnetic;
+        ph::DipoleMagneticField Dipole;
+    };
+
+    void CreatePhysicsFieldDemo();
+    void DestroyPhysicsFieldDemo();
+
     struct SphereBody
     {
         Entity EntityHandle;
@@ -131,6 +151,8 @@ private:
 
     Application* m_Application = nullptr;
     Ref<SceneGamePreparedResources> m_PreparedResources;
+    bool m_EnablePhysicsFieldDemo = false;
+    std::optional<PhysicsFieldDemo> m_PhysicsFieldDemo;
     bool m_WasPauseKeyPressed = false;
     bool m_IsPaused = false;
     bool m_PauseRequested = false;

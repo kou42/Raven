@@ -16,6 +16,7 @@ class Scene;
 namespace ph
 {
 class PhysicsWorld;
+class PointGravityField;
 
 // Physicsの3D可視化と画面左上のSolver Statistics Overlayを担当します。
 // Keyboard: H=Overlay, B=AABB, O=OBB, F=Fat AABB, T=Tree, P=Pair, C=Contact, N=Normal
@@ -54,6 +55,7 @@ public:
 
     PhysicsDebugSettings& GetSettings() { return m_Settings; }
     const PhysicsDebugSettings& GetSettings() const { return m_Settings; }
+    void SetPointGravityField(const PointGravityField* field);
 
 private:
     // 線描画専用頂点。TexcoordはOverlayフォント描画の将来拡張用に保持します。
@@ -68,10 +70,10 @@ private:
     // キー入力の立ち上がりのみで表示フラグを反転します。
     void UpdateToggleKeys();
     // 有効なDebug表示だけを判定し、3D World Debugと2D Overlayへ振り分けます。
-    void Render(bool showGravityField);
+    void Render(bool showVectorFields);
     // 3Dワイヤ表示群（AABB/OBB/Tree/Contact）を収集して描画します。
-    void RenderWorldDebug(bool showGravityField);
-    void AddGravityFieldDebug(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices) const;
+    void RenderWorldDebug(bool showVectorFields);
+    void AddVectorFieldDebug(std::vector<DebugVertex>& vertices, std::vector<uint32_t>& indices) const;
     // 2D OverlayにSolver統計と表示設定を描画します。
     void RenderOverlay();
 
@@ -101,6 +103,8 @@ private:
     // 実際にStepされているWorldへ接続されます。呼び出し側が両者の寿命を管理します。
     Scene* m_Scene = nullptr;
     const PhysicsWorld* m_PhysicsWorld = nullptr;
+    // SceneGame が所有し、実体の破棄前にこの参照を解除します。
+    const PointGravityField* m_PointGravityField = nullptr;
 
     // Debug Line描画用Materialと表示設定です。
     // MaterialはEnsureInitialized()で必要になった時点に遅延生成します。
