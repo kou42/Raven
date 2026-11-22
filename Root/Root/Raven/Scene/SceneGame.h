@@ -10,6 +10,7 @@
 #include "Raven/Physics/Electromagnetism/ElectricField.h"
 #include "Raven/Physics/Electromagnetism/MagneticField.h"
 #include "Raven/Physics/Field/GravityField.h"
+#include "Raven/Physics/Thermal/TemperatureField.h"
 
 #include "Raven/Animation/Debug/AnimationDebugOverlayRenderer.h"
 #include "Raven/Gltf/Debug/HumanSkinningDebugLayer.h"
@@ -92,6 +93,10 @@ private:
         ph::PointChargeElectricField PointCharge;
         ph::UniformMagneticField UniformMagnetic;
         ph::DipoleMagneticField Dipole;
+        ph::UniformTemperatureField UniformTemperature;
+        ph::GradientTemperatureField GradientTemperature;
+        ph::SphericalTemperatureRegionField SphereTemperature;
+        ph::BoxTemperatureRegionField BoxTemperature;
     };
 
     void CreatePhysicsFieldDemo();

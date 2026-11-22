@@ -44,4 +44,39 @@ std::vector<PhysicsFieldDebugSample> SamplePhysicsVectorField(
     }
     return samples;
 }
+
+std::vector<PhysicsFieldDebugScalarSample> SamplePhysicsScalarField(
+    const ScalarField& field, const PhysicsFieldDebugSlice& slice)
+{
+    // 直交2軸は場の中心を基準にし、法線方向だけを指定のワールド座標に固定します。
+    const int horizontal = slice.Plane == PhysicsFieldSlicePlane::YZ ? 1 : 0;
+    const int vertical = slice.Plane == PhysicsFieldSlicePlane::XY ? 1 : 2;
+    const int normal = 3 - horizontal - vertical;
+    math::Vec3 position = slice.Center;
+    position[normal] = slice.Coordinate;
+    if (std::isfinite(position.x) == false || std::isfinite(position.y) == false || std::isfinite(position.z) == false)
+    {
+        return {};
+    }
+
+    constexpr int count = PhysicsFieldDebugSlice::PointsPerAxis;
+    constexpr float spacing = PhysicsFieldDebugSlice::Spacing;
+    constexpr float halfExtent = spacing * (count - 1) * 0.5f;
+    std::vector<PhysicsFieldDebugScalarSample> samples;
+    samples.reserve(count * count);
+    for (int row = 0; row < count; ++row)
+    {
+        position[vertical] = slice.Center[vertical] + row * spacing - halfExtent;
+        for (int col = 0; col < count; ++col)
+        {
+            position[horizontal] = slice.Center[horizontal] + col * spacing - halfExtent;
+            const float value = field.Evaluate(position);
+            if (std::isfinite(value))
+            {
+                samples.push_back({ position, value });
+            }
+        }
+    }
+    return samples;
+}
 }

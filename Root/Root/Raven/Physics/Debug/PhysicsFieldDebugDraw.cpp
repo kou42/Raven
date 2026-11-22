@@ -44,4 +44,18 @@ bool BuildPhysicsFieldDebugArrow(const PhysicsFieldDebugSample& sample, const Ph
     lines = {{ { sample.Position, tip, color }, { tip, headBase + side, color }, { tip, headBase - side, color } }};
     return true;
 }
+
+bool TryGetPhysicsFieldDebugScalarColor(float value, float minimum, float maximum,
+    const math::Vec3& lowColor, const math::Vec3& highColor, math::Vec3& color)
+{
+    if (std::isfinite(value) == false || std::isfinite(minimum) == false
+        || std::isfinite(maximum) == false || minimum >= maximum)
+    {
+        return false;
+    }
+    const auto weight = static_cast<float>(std::clamp(
+        (static_cast<double>(value) - minimum) / (static_cast<double>(maximum) - minimum), 0.0, 1.0));
+    color = lowColor + (highColor - lowColor) * weight;
+    return true;
+}
 }

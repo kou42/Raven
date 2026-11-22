@@ -416,7 +416,11 @@ void SceneGame::CreatePhysicsFieldDemo()
         ph::UniformElectricField({ 10.0f, 0.0f, 0.0f }),
         ph::PointChargeElectricField({ 0.0f, 2.0f, 0.0f }, -1.0e-9, chargeSettings),
         ph::UniformMagneticField({ 0.0f, 0.0f, 50.0e-6f }),
-        ph::DipoleMagneticField({ 3.0f, 2.0f, 0.0f }, { 0.0f, 250.0f, 0.0f }, minimumSourceDistance)
+        ph::DipoleMagneticField({ 3.0f, 2.0f, 0.0f }, { 0.0f, 250.0f, 0.0f }, minimumSourceDistance),
+        ph::UniformTemperatureField(295.0f),
+        ph::GradientTemperatureField({ 0.0f, 0.0f, -5.0f }, 310.0f, { 12.5f, 4.0f, 0.0f }),
+        ph::SphericalTemperatureRegionField({ -4.0f, 0.0f, 0.0f }, 1.5f, 350.0f, 1.0f, ph::TemperatureRegionFalloff::SmoothStep),
+        ph::BoxTemperatureRegionField({ 4.0f, 0.0f, 0.0f }, { 1.5f, 1.0f, 1.5f }, 270.0f, 1.0f, ph::TemperatureRegionFalloff::Linear)
     });
     auto& demo = *m_PhysicsFieldDemo;
     auto& system = GetPhysicsSimulationWorld().GetElectromagneticSystem();
@@ -424,6 +428,11 @@ void SceneGame::CreatePhysicsFieldDemo()
     system.RegisterElectricField(demo.PointCharge);
     system.RegisterMagneticField(demo.UniformMagnetic);
     system.RegisterMagneticField(demo.Dipole);
+    auto& temperature = GetPhysicsSimulationWorld().GetThermalWorld().GetTemperatureFieldRegistry();
+    temperature.RegisterField(demo.UniformTemperature);
+    temperature.RegisterField(demo.GradientTemperature);
+    temperature.RegisterField(demo.SphereTemperature);
+    temperature.RegisterField(demo.BoxTemperature);
     m_PhysicsDebugRenderer.SetPointGravityField(&demo.PointGravity);
 }
 
@@ -435,13 +444,18 @@ void SceneGame::DestroyPhysicsFieldDemo()
     }
 
     // World と Debug Renderer は非所有参照だけを持つため、実体の破棄に先立って解除します。
-    const auto& demo = *m_PhysicsFieldDemo;
+    auto& demo = *m_PhysicsFieldDemo;
     auto& system = GetPhysicsSimulationWorld().GetElectromagneticSystem();
     m_PhysicsDebugRenderer.SetPointGravityField(nullptr);
     system.UnregisterElectricField(demo.UniformElectric);
     system.UnregisterElectricField(demo.PointCharge);
     system.UnregisterMagneticField(demo.UniformMagnetic);
     system.UnregisterMagneticField(demo.Dipole);
+    auto& temperature = GetPhysicsSimulationWorld().GetThermalWorld().GetTemperatureFieldRegistry();
+    temperature.UnregisterField(demo.UniformTemperature);
+    temperature.UnregisterField(demo.GradientTemperature);
+    temperature.UnregisterField(demo.SphereTemperature);
+    temperature.UnregisterField(demo.BoxTemperature);
     m_PhysicsFieldDemo.reset();
 }
 

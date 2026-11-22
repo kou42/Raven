@@ -2,6 +2,8 @@
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
+#include <limits>
+#include <numbers>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -14,6 +16,7 @@
 #include "Raven/Physics/Debug/PhysicsFieldDebugDraw.h"
 #include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
 #include "Raven/Physics/PhysicsWorld.h"
+#include "Raven/Physics/Thermal/TemperatureFieldRegistry.h"
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
 #include "Raven/Renderer/Buffer/VertexBuffer.h"
@@ -41,6 +44,30 @@ std::string FormatFloat(float value)
     return stream.str();
 }
 
+class TemperatureSliceField final : public ScalarField
+{
+public:
+    TemperatureSliceField(const TemperatureField& field, bool showInfluence)
+        : m_Field(field), m_ShowInfluence(showInfluence)
+    {
+    }
+
+    float Evaluate(const math::Vec3& position) const override
+    {
+        const float influence = m_Field.EvaluateInfluence(position);
+        // 領域外の局所 Field は Registry の合成にも寄与しないため、サンプル表示から除外します。
+        if (std::isfinite(influence) == false || influence <= 0.0f)
+        {
+            return std::numeric_limits<float>::quiet_NaN();
+        }
+        return m_ShowInfluence ? influence : m_Field.Evaluate(position);
+    }
+
+private:
+    const TemperatureField& m_Field;
+    bool m_ShowInfluence;
+};
+
 } // namespace
 
 PhysicsDebugRenderer::PhysicsDebugRenderer(Scene& scene)
@@ -64,7 +91,7 @@ void PhysicsDebugRenderer::RenderRegistered(const Scene* renderedScene)
         if (renderer != nullptr)
         {
             // Field の取得先を現在のカメラを設定した Scene に限定します。
-            renderer->Render(renderer->m_Scene == renderedScene && renderer->m_Settings.HasVisibleVectorField());
+            renderer->Render(renderer->m_Scene == renderedScene);
         }
     }
 }
@@ -141,7 +168,7 @@ void PhysicsDebugRenderer::UpdateToggleKeys()
     toggle(Key::N, m_Settings.ShowContactNormals, m_WasContactNormalKeyPressed);
 }
 
-void PhysicsDebugRenderer::Render(bool showVectorFields)
+void PhysicsDebugRenderer::Render(bool isRenderedScene)
 {
     UpdateToggleKeys();
 
@@ -150,6 +177,8 @@ void PhysicsDebugRenderer::Render(bool showVectorFields)
         return;
     }
 
+    const bool showVectorFields = isRenderedScene && m_Settings.HasVisibleVectorField();
+    const bool showTemperatureFields = isRenderedScene && m_Settings.HasVisibleTemperatureField();
     const bool showWorld = m_Settings.ShowAABB
         || m_Settings.ShowOBB
         || m_Settings.ShowFatAABB
@@ -157,7 +186,8 @@ void PhysicsDebugRenderer::Render(bool showVectorFields)
         || m_Settings.ShowBroadPhasePairs
         || m_Settings.ShowContactPoints
         || m_Settings.ShowContactNormals
-        || showVectorFields;
+        || showVectorFields
+        || showTemperatureFields;
 
     if (showWorld == false && m_Settings.ShowSolverStatistics == false)
     {
@@ -179,7 +209,7 @@ void PhysicsDebugRenderer::Render(bool showVectorFields)
         // BeginScene(Camera)されていないSandbox等では描画せず、前回Cameraの使い回しを防ぎます。
         if (Renderer::GetCameraContext().Valid)
         {
-            RenderWorldDebug(showVectorFields);
+            RenderWorldDebug(showVectorFields, showTemperatureFields);
         }
     }
 
@@ -189,7 +219,7 @@ void PhysicsDebugRenderer::Render(bool showVectorFields)
     }
 }
 
-void PhysicsDebugRenderer::RenderWorldDebug(bool showVectorFields)
+void PhysicsDebugRenderer::RenderWorldDebug(bool showVectorFields, bool showTemperatureFields)
 {
     std::vector<DebugVertex> vertices;
     std::vector<uint32_t> indices;
@@ -312,6 +342,10 @@ void PhysicsDebugRenderer::RenderWorldDebug(bool showVectorFields)
     if (showVectorFields == true)
     {
         AddVectorFieldDebug(vertices, indices);
+    }
+    if (showTemperatureFields == true)
+    {
+        AddTemperatureFieldDebug(vertices, indices);
     }
 
     // Renderer::BeginScene(Camera)で設定されたCamera Contextを利用します。
@@ -436,6 +470,100 @@ void PhysicsDebugRenderer::AddVectorFieldDebug(std::vector<DebugVertex>& vertice
     }
 }
 
+void PhysicsDebugRenderer::AddTemperatureFieldDebug(std::vector<DebugVertex>& vertices,
+    std::vector<uint32_t>& indices) const
+{
+    const bool influence = m_Settings.ShowTemperatureInfluence;
+    const bool validRange = std::isfinite(m_Settings.TemperatureMinimum) && std::isfinite(m_Settings.TemperatureMaximum)
+        && m_Settings.TemperatureMinimum >= 0.0f && m_Settings.TemperatureMinimum < m_Settings.TemperatureMaximum;
+    const float minimum = influence ? 0.0f : (validRange ? m_Settings.TemperatureMinimum : PhysicsDebugSettings::DefaultTemperatureMinimum);
+    const float maximum = influence ? 1.0f : (validRange ? m_Settings.TemperatureMaximum : PhysicsDebugSettings::DefaultTemperatureMaximum);
+    const math::Vec3 lowColor = influence ? math::Vec3{ 0.35f, 0.15f, 0.7f } : math::Vec3{ 0.15f, 0.65f, 1.0f };
+    const math::Vec3 highColor = influence ? math::Vec3{ 0.25f, 1.0f, 0.35f } : math::Vec3{ 1.0f, 0.25f, 0.08f };
+    constexpr math::Vec3 boundsColor{ 0.9f, 0.9f, 0.9f };
+
+    const Scene& scene = *m_Scene;
+    const auto& registry = scene.GetPhysicsSimulationWorld().GetThermalWorld().GetTemperatureFieldRegistry();
+    PhysicsFieldDebugSlice slice;
+    slice.Plane = m_Settings.TemperatureSlicePlane;
+    slice.Coordinate = m_Settings.TemperatureSliceCoordinate;
+    // 1 フレームに最大 4 スライスを評価します。登録参照は描画呼び出し中のみ使用します。
+    int remainingFields = 4;
+    for (const TemperatureField* field : registry.GetRegisteredFields())
+    {
+        if (remainingFields == 0)
+        {
+            break;
+        }
+        const auto* uniform = dynamic_cast<const UniformTemperatureField*>(field);
+        const auto* gradient = dynamic_cast<const GradientTemperatureField*>(field);
+        const auto* sphere = dynamic_cast<const SphericalTemperatureRegionField*>(field);
+        const auto* box = dynamic_cast<const BoxTemperatureRegionField*>(field);
+        if (gradient != nullptr && m_Settings.ShowGradientTemperatureField)
+        {
+            slice.Center = gradient->GetReferencePosition();
+        }
+        else if (sphere != nullptr && m_Settings.ShowSphericalTemperatureField)
+        {
+            slice.Center = sphere->GetCenter();
+        }
+        else if (box != nullptr && m_Settings.ShowBoxTemperatureField)
+        {
+            slice.Center = box->GetCenter();
+        }
+        else if (uniform != nullptr && m_Settings.ShowUniformTemperatureField)
+        {
+            slice.Center = {};
+        }
+        else
+        {
+            continue;
+        }
+        if (std::isfinite(slice.Center.x) == false || std::isfinite(slice.Center.y) == false
+            || std::isfinite(slice.Center.z) == false)
+        {
+            continue;
+        }
+        --remainingFields;
+
+        const TemperatureSliceField displayField(*field, influence);
+        for (const auto& sample : SamplePhysicsScalarField(displayField, slice))
+        {
+            math::Vec3 color;
+            if (TryGetPhysicsFieldDebugScalarColor(sample.Value, minimum, maximum, lowColor, highColor, color))
+            {
+                AddPointMarker(vertices, indices, sample.Position, PhysicsFieldDebugSlice::Spacing * 0.18f, color);
+            }
+        }
+
+        if (m_Settings.ShowTemperatureBounds && sphere != nullptr && sphere->GetRadius() > 0.0f)
+        {
+            // 3 つの大円で球のコアを示します。Falloff の外縁は Influence の色で判別できます。
+            constexpr int segments = 32;
+            constexpr float angleStep = 2.0f * std::numbers::pi_v<float> / segments;
+            for (int normal = 0; normal < 3; ++normal)
+            {
+                math::Vec3 previous = slice.Center;
+                previous[(normal + 1) % 3] += sphere->GetRadius();
+                for (int segment = 1; segment <= segments; ++segment)
+                {
+                    const float angle = segment * angleStep;
+                    math::Vec3 point = slice.Center;
+                    point[(normal + 1) % 3] += sphere->GetRadius() * std::cos(angle);
+                    point[(normal + 2) % 3] += sphere->GetRadius() * std::sin(angle);
+                    AddLine(vertices, indices, previous, point, boundsColor);
+                    previous = point;
+                }
+            }
+        }
+        if (m_Settings.ShowTemperatureBounds && box != nullptr)
+        {
+            AddAABB(vertices, indices,
+                { slice.Center - box->GetHalfExtents(), slice.Center + box->GetHalfExtents() }, boundsColor);
+        }
+    }
+}
+
 void PhysicsDebugRenderer::RenderOverlay()
 {
     if (m_PhysicsWorld == nullptr)
@@ -511,6 +639,10 @@ void PhysicsDebugRenderer::RenderOverlay()
         (m_Settings.ShowElectricFields || m_Settings.ShowPointChargeFields) ? onColor : offColor);
     addLine("MAGNETIC: " + OnOff(m_Settings.ShowMagneticFields) + " DIPOLE: " + OnOff(m_Settings.ShowDipoleFields),
         (m_Settings.ShowMagneticFields || m_Settings.ShowDipoleFields) ? onColor : offColor);
+    if (m_Settings.HasVisibleTemperatureField())
+    {
+        addLine(m_Settings.ShowTemperatureInfluence ? "THERMAL: INFLUENCE 0-1" : "THERMAL: TEMPERATURE K", onColor);
+    }
 
     SubmitLines(vertices, indices, math::Mat4::Identity(), math::Mat4::Identity());
 }

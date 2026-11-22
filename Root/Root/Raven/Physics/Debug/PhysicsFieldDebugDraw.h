@@ -22,4 +22,7 @@ struct PhysicsFieldDebugArrowStyle
 
 bool BuildPhysicsFieldDebugArrow(const PhysicsFieldDebugSample& sample, const PhysicsFieldDebugArrowStyle& style,
     float referenceLength, float maxLength, std::array<PhysicsFieldDebugLine, 3>& lines);
+
+bool TryGetPhysicsFieldDebugScalarColor(float value, float minimum, float maximum,
+    const math::Vec3& lowColor, const math::Vec3& highColor, math::Vec3& color);
 }

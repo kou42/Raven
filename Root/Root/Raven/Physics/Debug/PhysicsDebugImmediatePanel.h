@@ -91,13 +91,73 @@ inline bool DrawPhysicsDebugImmediatePanel(
 
     // 既存 Panel の高さを保ち、場の調整項目を横に並べます。
     UIPanel* fieldPanel = immediate.BeginPanel("physics-field-debug",
-        position + math::Vec2(310.0f, 0.0f), math::Vec2(300.0f, 500.0f));
+        position + math::Vec2(310.0f, 0.0f), math::Vec2(300.0f, 532.0f));
     if (fieldPanel == nullptr)
     {
         return changed;
     }
     fieldPanel->SetSpacing(4.0f);
     fieldPanel->SetBackgroundColor(math::Vec4(0.07f, 0.10f, 0.16f, 0.94f));
+    if (immediate.Button("field-controls",
+            settings.ShowTemperatureControls ? "Vector Controls" : "Temperature Controls",
+            font, math::Vec2(280.0f, 28.0f)))
+    {
+        settings.ShowTemperatureControls = settings.ShowTemperatureControls == false;
+        changed = true;
+    }
+    auto addFieldSlider = [&](const char* id, const char* labelId, const char* caption,
+        float& value, float minimum, float maximum, int precision)
+    {
+        UILabel* label = immediate.Text(labelId, formatValue(caption, value, precision), font);
+        changed = immediate.SliderFloat(id, &value, minimum, maximum, math::Vec2(280.0f, 24.0f)) || changed;
+        if (label != nullptr)
+        {
+            label->SetPreferredSize(math::Vec2(280.0f, 20.0f));
+            label->SetText(formatValue(caption, value, precision));
+        }
+    };
+    if (settings.ShowTemperatureControls)
+    {
+        const math::Vec2 controlSize{ 280.0f, 28.0f };
+        changed = immediate.Checkbox("thermal-uniform", "Uniform Temperature",
+            &settings.ShowUniformTemperatureField, font, controlSize) || changed;
+        changed = immediate.Checkbox("thermal-gradient", "Gradient Temperature",
+            &settings.ShowGradientTemperatureField, font, controlSize) || changed;
+        changed = immediate.Checkbox("thermal-sphere", "Sphere Temperature Region",
+            &settings.ShowSphericalTemperatureField, font, controlSize) || changed;
+        changed = immediate.Checkbox("thermal-box", "Box Temperature Region",
+            &settings.ShowBoxTemperatureField, font, controlSize) || changed;
+        changed = immediate.Checkbox("thermal-influence", "Show Influence (0-1)",
+            &settings.ShowTemperatureInfluence, font, controlSize) || changed;
+        changed = immediate.Checkbox("thermal-bounds", "Region Bounds",
+            &settings.ShowTemperatureBounds, font, controlSize) || changed;
+        auto& plane = settings.TemperatureSlicePlane;
+        const char* planeLabel = plane == PhysicsFieldSlicePlane::XY ? "Slice XY"
+            : (plane == PhysicsFieldSlicePlane::YZ ? "Slice YZ" : "Slice XZ");
+        if (immediate.Button("thermal-plane", planeLabel, font, controlSize))
+        {
+            plane = plane == PhysicsFieldSlicePlane::XZ ? PhysicsFieldSlicePlane::XY
+                : (plane == PhysicsFieldSlicePlane::XY ? PhysicsFieldSlicePlane::YZ : PhysicsFieldSlicePlane::XZ);
+            changed = true;
+        }
+        const char* coordinateLabel = plane == PhysicsFieldSlicePlane::XY ? "Slice Z (m)"
+            : (plane == PhysicsFieldSlicePlane::YZ ? "Slice X (m)" : "Slice Y (m)");
+        addFieldSlider("thermal-position", "thermal-position-label", coordinateLabel,
+            settings.TemperatureSliceCoordinate, -10.0f, 10.0f, 2);
+        if (settings.ShowTemperatureInfluence)
+        {
+            immediate.Text("thermal-legend", "Purple: low   Green: high", font);
+        }
+        else
+        {
+            addFieldSlider("thermal-min", "thermal-min-label", "Blue Minimum (K)",
+                settings.TemperatureMinimum, 0.0f, 499.0f, 0);
+            addFieldSlider("thermal-max", "thermal-max-label", "Red Maximum (K)",
+                settings.TemperatureMaximum, settings.TemperatureMinimum + 1.0f, 1000.0f, 0);
+        }
+        return immediate.EndContainer() == true && changed;
+    }
+
     changed = immediate.Checkbox("gravity", "Uniform Gravity (m/s^2)",
         &settings.ShowVectorFields, font, math::Vec2(280.0f, 28.0f)) || changed;
     changed = immediate.Checkbox("point-gravity", "Point Gravity (m/s^2)",
@@ -112,17 +172,6 @@ inline bool DrawPhysicsDebugImmediatePanel(
         &settings.ShowDipoleFields, font, math::Vec2(280.0f, 28.0f)) || changed;
     changed = immediate.Checkbox("field-bounds", "Grid Bounds",
         &settings.ShowFieldBounds, font, math::Vec2(280.0f, 28.0f)) || changed;
-    auto addFieldSlider = [&](const char* id, const char* labelId, const char* caption,
-        float& value, float minimum, float maximum, int precision)
-    {
-        UILabel* label = immediate.Text(labelId, formatValue(caption, value, precision), font);
-        changed = immediate.SliderFloat(id, &value, minimum, maximum, math::Vec2(280.0f, 24.0f)) || changed;
-        if (label != nullptr)
-        {
-            label->SetPreferredSize(math::Vec2(280.0f, 20.0f));
-            label->SetText(formatValue(caption, value, precision));
-        }
-    };
     addFieldSlider("grid-points", "grid-points-label", "Points per Axis", settings.FieldGridPointsPerAxis,
         1.0f, static_cast<float>(PhysicsFieldDebugGrid::MaxPointsPerAxis), 0);
     addFieldSlider("grid-spacing", "grid-spacing-label", "Grid Spacing (m)", settings.FieldGridSpacing,

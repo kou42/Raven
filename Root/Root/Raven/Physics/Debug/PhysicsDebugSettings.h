@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Raven/Physics/Debug/PhysicsFieldDebugSampler.h"
+
 namespace Raven::ph
 {
 
@@ -35,6 +37,26 @@ struct PhysicsDebugSettings
     float GravityArrowScale = 1.0f;
     float ElectricArrowScale = 1.0f;
     float MagneticArrowScale = 1.0f;
+
+    static constexpr float DefaultTemperatureMinimum = 260.0f;
+    static constexpr float DefaultTemperatureMaximum = 360.0f;
+    bool ShowTemperatureControls = false;
+    bool ShowUniformTemperatureField = false;
+    bool ShowGradientTemperatureField = false;
+    bool ShowSphericalTemperatureField = false;
+    bool ShowBoxTemperatureField = false;
+    bool ShowTemperatureInfluence = false;
+    bool ShowTemperatureBounds = true;
+    PhysicsFieldSlicePlane TemperatureSlicePlane = PhysicsFieldSlicePlane::XZ;
+    float TemperatureSliceCoordinate = 0.0f;
+    float TemperatureMinimum = DefaultTemperatureMinimum;
+    float TemperatureMaximum = DefaultTemperatureMaximum;
+
+    bool HasVisibleTemperatureField() const
+    {
+        return ShowUniformTemperatureField || ShowGradientTemperatureField
+            || ShowSphericalTemperatureField || ShowBoxTemperatureField;
+    }
 
     bool HasVisibleVectorField() const
     {
