@@ -89,17 +89,27 @@ inline bool DrawPhysicsDebugImmediatePanel(
         return false;
     }
 
-    // 既存 Panel の高さを保ち、重力の調整項目を横に並べます。
+    // 既存 Panel の高さを保ち、場の調整項目を横に並べます。
     UIPanel* fieldPanel = immediate.BeginPanel("physics-field-debug",
-        position + math::Vec2(310.0f, 0.0f), math::Vec2(300.0f, 260.0f));
+        position + math::Vec2(310.0f, 0.0f), math::Vec2(300.0f, 500.0f));
     if (fieldPanel == nullptr)
     {
         return changed;
     }
     fieldPanel->SetSpacing(4.0f);
     fieldPanel->SetBackgroundColor(math::Vec4(0.07f, 0.10f, 0.16f, 0.94f));
-    changed = immediate.Checkbox("gravity", "Gravity Field (m/s^2)",
+    changed = immediate.Checkbox("gravity", "Uniform Gravity (m/s^2)",
         &settings.ShowVectorFields, font, math::Vec2(280.0f, 28.0f)) || changed;
+    changed = immediate.Checkbox("point-gravity", "Point Gravity (m/s^2)",
+        &settings.ShowPointGravityFields, font, math::Vec2(280.0f, 28.0f)) || changed;
+    changed = immediate.Checkbox("electric", "Electric Fields (N/C)",
+        &settings.ShowElectricFields, font, math::Vec2(280.0f, 28.0f)) || changed;
+    changed = immediate.Checkbox("point-charge", "Point Charge (N/C)",
+        &settings.ShowPointChargeFields, font, math::Vec2(280.0f, 28.0f)) || changed;
+    changed = immediate.Checkbox("magnetic", "Magnetic Fields (T)",
+        &settings.ShowMagneticFields, font, math::Vec2(280.0f, 28.0f)) || changed;
+    changed = immediate.Checkbox("dipole", "Magnetic Dipole (T)",
+        &settings.ShowDipoleFields, font, math::Vec2(280.0f, 28.0f)) || changed;
     changed = immediate.Checkbox("field-bounds", "Grid Bounds",
         &settings.ShowFieldBounds, font, math::Vec2(280.0f, 28.0f)) || changed;
     auto addFieldSlider = [&](const char* id, const char* labelId, const char* caption,
@@ -117,7 +127,11 @@ inline bool DrawPhysicsDebugImmediatePanel(
         1.0f, static_cast<float>(PhysicsFieldDebugGrid::MaxPointsPerAxis), 0);
     addFieldSlider("grid-spacing", "grid-spacing-label", "Grid Spacing (m)", settings.FieldGridSpacing,
         PhysicsFieldDebugGrid::MinSpacing, PhysicsFieldDebugGrid::MaxSpacing, 2);
-    addFieldSlider("arrow-scale", "arrow-scale-label", "Arrow Scale", settings.GravityArrowScale,
+    addFieldSlider("arrow-scale", "arrow-scale-label", "Gravity Arrow Scale", settings.GravityArrowScale,
+        0.1f, 4.0f, 2);
+    addFieldSlider("electric-scale", "electric-scale-label", "Electric Arrow Scale", settings.ElectricArrowScale,
+        0.1f, 4.0f, 2);
+    addFieldSlider("magnetic-scale", "magnetic-scale-label", "Magnetic Arrow Scale", settings.MagneticArrowScale,
         0.1f, 4.0f, 2);
     return immediate.EndContainer() == true && changed;
 }

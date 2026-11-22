@@ -394,9 +394,61 @@ void SceneGame::UpdateMouseDragImpulse()
     m_WasLeftMousePressed = leftPressed;
 }
 
+SceneGame::~SceneGame()
+{
+    DestroyPhysicsFieldDemo();
+}
+
+void SceneGame::CreatePhysicsFieldDemo()
+{
+    if (m_EnablePhysicsFieldDemo == false || m_PhysicsFieldDemo.has_value())
+    {
+        return;
+    }
+
+    // 既定格子の近くにソースを配置します。負の電荷と上向き双極子は矢印の方向を比較できます。
+    // 電場・磁場の基準値は概ねソースから 1 m 離れた位置で見える大きさに合わせます。
+    constexpr float minimumSourceDistance = 0.25f;
+    ph::CoulombForceSettings chargeSettings;
+    chargeSettings.MinimumDistance = minimumSourceDistance;
+    m_PhysicsFieldDemo.emplace(PhysicsFieldDemo{
+        ph::PointGravityField({ -3.0f, 2.0f, 0.0f }, 9.81f, minimumSourceDistance),
+        ph::UniformElectricField({ 10.0f, 0.0f, 0.0f }),
+        ph::PointChargeElectricField({ 0.0f, 2.0f, 0.0f }, -1.0e-9, chargeSettings),
+        ph::UniformMagneticField({ 0.0f, 0.0f, 50.0e-6f }),
+        ph::DipoleMagneticField({ 3.0f, 2.0f, 0.0f }, { 0.0f, 250.0f, 0.0f }, minimumSourceDistance)
+    });
+    auto& demo = *m_PhysicsFieldDemo;
+    auto& system = GetPhysicsSimulationWorld().GetElectromagneticSystem();
+    system.RegisterElectricField(demo.UniformElectric);
+    system.RegisterElectricField(demo.PointCharge);
+    system.RegisterMagneticField(demo.UniformMagnetic);
+    system.RegisterMagneticField(demo.Dipole);
+    m_PhysicsDebugRenderer.SetPointGravityField(&demo.PointGravity);
+}
+
+void SceneGame::DestroyPhysicsFieldDemo()
+{
+    if (m_PhysicsFieldDemo.has_value() == false)
+    {
+        return;
+    }
+
+    // World と Debug Renderer は非所有参照だけを持つため、実体の破棄に先立って解除します。
+    const auto& demo = *m_PhysicsFieldDemo;
+    auto& system = GetPhysicsSimulationWorld().GetElectromagneticSystem();
+    m_PhysicsDebugRenderer.SetPointGravityField(nullptr);
+    system.UnregisterElectricField(demo.UniformElectric);
+    system.UnregisterElectricField(demo.PointCharge);
+    system.UnregisterMagneticField(demo.UniformMagnetic);
+    system.UnregisterMagneticField(demo.Dipole);
+    m_PhysicsFieldDemo.reset();
+}
+
 void SceneGame::OnCreate()
 {
     RAVEN_PROFILE_SCOPE("SceneGame.OnCreate.Total");
+    CreatePhysicsFieldDemo();
     if (m_Application != nullptr)
     {
         UINavigationManager& navigation = m_Application->GetUINavigationManager();
@@ -598,6 +650,7 @@ void SceneGame::OnCreate()
 
 void SceneGame::OnDestroy()
 {
+    DestroyPhysicsFieldDemo();
     if (m_Application != nullptr)
     {
         m_Application->GetUINavigationManager().Clear();

@@ -24,10 +24,23 @@ struct PhysicsDebugSettings
     float ContactPointRadius = 0.03f;
 
     bool ShowVectorFields = false;
+    bool ShowPointGravityFields = false;
+    bool ShowElectricFields = false;
+    bool ShowPointChargeFields = false;
+    bool ShowMagneticFields = false;
+    bool ShowDipoleFields = false;
     bool ShowFieldBounds = true;
     float FieldGridPointsPerAxis = 7.0f;
     float FieldGridSpacing = 1.0f;
     float GravityArrowScale = 1.0f;
+    float ElectricArrowScale = 1.0f;
+    float MagneticArrowScale = 1.0f;
+
+    bool HasVisibleVectorField() const
+    {
+        return ShowVectorFields || ShowPointGravityFields || ShowElectricFields
+            || ShowPointChargeFields || ShowMagneticFields || ShowDipoleFields;
+    }
 };
 
 } // namespace Raven::ph

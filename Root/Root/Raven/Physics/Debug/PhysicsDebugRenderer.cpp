@@ -12,6 +12,7 @@
 #include "Raven/Physics/Debug/PhysicsDebugOverlayFont.h"
 #include "Raven/Physics/Debug/PhysicsDebugRenderer.h"
 #include "Raven/Physics/Debug/PhysicsFieldDebugDraw.h"
+#include "Raven/Physics/Electromagnetism/ElectromagneticSystem.h"
 #include "Raven/Physics/PhysicsWorld.h"
 #include "Raven/Renderer/Buffer/IndexBuffer.h"
 #include "Raven/Renderer/Buffer/VertexArray.h"
@@ -63,9 +64,14 @@ void PhysicsDebugRenderer::RenderRegistered(const Scene* renderedScene)
         if (renderer != nullptr)
         {
             // Field の取得先を現在のカメラを設定した Scene に限定します。
-            renderer->Render(renderer->m_Scene == renderedScene && renderer->m_Settings.ShowVectorFields);
+            renderer->Render(renderer->m_Scene == renderedScene && renderer->m_Settings.HasVisibleVectorField());
         }
     }
+}
+
+void PhysicsDebugRenderer::SetPointGravityField(const PointGravityField* field)
+{
+    m_PointGravityField = field;
 }
 
 void PhysicsDebugRenderer::BindPhysicsWorld(Scene& scene, const PhysicsWorld& world)
@@ -135,7 +141,7 @@ void PhysicsDebugRenderer::UpdateToggleKeys()
     toggle(Key::N, m_Settings.ShowContactNormals, m_WasContactNormalKeyPressed);
 }
 
-void PhysicsDebugRenderer::Render(bool showGravityField)
+void PhysicsDebugRenderer::Render(bool showVectorFields)
 {
     UpdateToggleKeys();
 
@@ -151,7 +157,7 @@ void PhysicsDebugRenderer::Render(bool showGravityField)
         || m_Settings.ShowBroadPhasePairs
         || m_Settings.ShowContactPoints
         || m_Settings.ShowContactNormals
-        || showGravityField;
+        || showVectorFields;
 
     if (showWorld == false && m_Settings.ShowSolverStatistics == false)
     {
@@ -173,7 +179,7 @@ void PhysicsDebugRenderer::Render(bool showGravityField)
         // BeginScene(Camera)されていないSandbox等では描画せず、前回Cameraの使い回しを防ぎます。
         if (Renderer::GetCameraContext().Valid)
         {
-            RenderWorldDebug(showGravityField);
+            RenderWorldDebug(showVectorFields);
         }
     }
 
@@ -183,7 +189,7 @@ void PhysicsDebugRenderer::Render(bool showGravityField)
     }
 }
 
-void PhysicsDebugRenderer::RenderWorldDebug(bool showGravityField)
+void PhysicsDebugRenderer::RenderWorldDebug(bool showVectorFields)
 {
     std::vector<DebugVertex> vertices;
     std::vector<uint32_t> indices;
@@ -303,9 +309,9 @@ void PhysicsDebugRenderer::RenderWorldDebug(bool showGravityField)
         }
     }
 
-    if (showGravityField == true)
+    if (showVectorFields == true)
     {
-        AddGravityFieldDebug(vertices, indices);
+        AddVectorFieldDebug(vertices, indices);
     }
 
     // Renderer::BeginScene(Camera)で設定されたCamera Contextを利用します。
@@ -314,7 +320,7 @@ void PhysicsDebugRenderer::RenderWorldDebug(bool showGravityField)
     SubmitLines(vertices, indices, cameraContext.View, cameraContext.Projection);
 }
 
-void PhysicsDebugRenderer::AddGravityFieldDebug(std::vector<DebugVertex>& vertices,
+void PhysicsDebugRenderer::AddVectorFieldDebug(std::vector<DebugVertex>& vertices,
     std::vector<uint32_t>& indices) const
 {
     PhysicsFieldDebugGrid grid;
@@ -326,26 +332,105 @@ void PhysicsDebugRenderer::AddGravityFieldDebug(std::vector<DebugVertex>& vertic
     }
     grid.Spacing = m_Settings.FieldGridSpacing;
     const float halfExtent = grid.GetHalfExtent();
-    if (m_Settings.ShowFieldBounds && halfExtent > 0.0f)
-    {
-        const math::Vec3 extent{ halfExtent, halfExtent, halfExtent };
-        AddAABB(vertices, indices, { grid.Center - extent, grid.Center + extent }, { 0.4f, 0.7f, 0.8f });
-    }
-
-    // 標準重力で 0.5 m の矢印とし、倍率や加速度を上げても格子間隔を超えないようにします。
-    constexpr float referenceGravity = 9.81f;
+    const math::Vec3 extent{ halfExtent, halfExtent, halfExtent };
+    // 物理単位ごとの基準値で 0.5 m の矢印に対応させ、各色の強度を独立して正規化します。
+    constexpr PhysicsFieldDebugArrowStyle gravityStyle{ 9.81f, { 0.25f, 0.65f, 1.0f }, { 1.0f, 0.45f, 0.15f } };
+    constexpr PhysicsFieldDebugArrowStyle electricStyle{ 10.0f, { 0.15f, 0.75f, 0.35f }, { 0.75f, 1.0f, 0.2f } };
+    constexpr PhysicsFieldDebugArrowStyle magneticStyle{ 50.0e-6f, { 0.6f, 0.35f, 1.0f }, { 1.0f, 0.45f, 0.85f } };
     constexpr float baseArrowLength = 0.5f;
     const float maxArrowLength = 0.8f * grid.GetSpacing();
-    const auto& gravity = static_cast<const Scene&>(*m_Scene).GetPhysicsWorld().GetGravityField();
-    for (const auto& sample : SamplePhysicsVectorField(gravity, grid))
+    const int samplesPerField = grid.PointsPerAxis * grid.PointsPerAxis * grid.PointsPerAxis;
+    // 全 Field の合計を最大解像度のデモ 6 個分に制限し、Registry が増えても描画負荷を抑えます。
+    constexpr int maxAxis = PhysicsFieldDebugGrid::MaxPointsPerAxis;
+    int remainingSamples = 6 * maxAxis * maxAxis * maxAxis;
+    auto isFinite = [](const math::Vec3& value)
     {
-        std::array<PhysicsFieldDebugLine, 3> lines;
-        if (BuildPhysicsFieldDebugArrow(sample, referenceGravity,
-                baseArrowLength * m_Settings.GravityArrowScale, maxArrowLength, lines))
+        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+    };
+    auto drawField = [&](const VectorField& field, const PhysicsFieldDebugArrowStyle& style,
+        float scale, const math::Vec3* center = nullptr)
+    {
+        grid.Center = center != nullptr ? *center : math::Vec3{};
+        if (remainingSamples < samplesPerField || isFinite(grid.Center) == false)
         {
-            for (const auto& line : lines)
+            return false;
+        }
+        remainingSamples -= samplesPerField;
+        if (m_Settings.ShowFieldBounds && halfExtent > 0.0f)
+        {
+            AddAABB(vertices, indices, { grid.Center - extent, grid.Center + extent }, style.WeakColor);
+        }
+        if (center != nullptr)
+        {
+            AddPointMarker(vertices, indices, *center, grid.GetSpacing() * 0.15f, style.StrongColor);
+        }
+        for (const auto& sample : SamplePhysicsVectorField(field, grid))
+        {
+            std::array<PhysicsFieldDebugLine, 3> lines;
+            if (BuildPhysicsFieldDebugArrow(sample, style, baseArrowLength * scale, maxArrowLength, lines))
             {
-                AddLine(vertices, indices, line.Start, line.End, line.Color);
+                for (const auto& line : lines)
+                {
+                    AddLine(vertices, indices, line.Start, line.End, line.Color);
+                }
+            }
+        }
+        return true;
+    };
+
+    const Scene& scene = *m_Scene;
+    if (m_Settings.ShowVectorFields)
+    {
+        drawField(scene.GetPhysicsWorld().GetGravityField(), gravityStyle, m_Settings.GravityArrowScale);
+    }
+    if (m_Settings.ShowPointGravityFields && m_PointGravityField != nullptr)
+    {
+        drawField(*m_PointGravityField, gravityStyle, m_Settings.GravityArrowScale, &m_PointGravityField->GetCenter());
+    }
+
+    // Registry は Scene スレッドの描画中に参照し、Field への参照を次フレームへ持ち越しません。
+    const auto& electromagnetism = scene.GetPhysicsSimulationWorld().GetElectromagneticSystem();
+    if (m_Settings.ShowElectricFields || m_Settings.ShowPointChargeFields)
+    {
+        for (const ElectricField* field : electromagnetism.GetRegisteredElectricFields())
+        {
+            if (field == nullptr || remainingSamples < samplesPerField)
+            {
+                continue;
+            }
+            const auto* charge = dynamic_cast<const PointChargeElectricField*>(field);
+            if (charge != nullptr ? m_Settings.ShowPointChargeFields : m_Settings.ShowElectricFields)
+            {
+                drawField(*field, electricStyle, m_Settings.ElectricArrowScale,
+                    charge != nullptr ? &charge->GetSourcePosition() : nullptr);
+            }
+        }
+    }
+    if (m_Settings.ShowMagneticFields || m_Settings.ShowDipoleFields)
+    {
+        for (const MagneticField* field : electromagnetism.GetRegisteredMagneticFields())
+        {
+            if (field == nullptr || remainingSamples < samplesPerField)
+            {
+                continue;
+            }
+            const auto* dipole = dynamic_cast<const DipoleMagneticField*>(field);
+            if (dipole == nullptr && m_Settings.ShowMagneticFields)
+            {
+                drawField(*field, magneticStyle, m_Settings.MagneticArrowScale);
+            }
+            if (dipole != nullptr && m_Settings.ShowDipoleFields
+                && drawField(*dipole, magneticStyle, m_Settings.MagneticArrowScale, &dipole->GetCenter()))
+            {
+                // モーメントの単位や大きさに関係なく、正方向を格子間隔に合わせて示します。
+                const auto& moment = dipole->GetDipoleMoment();
+                const float maxComponent = std::max({ std::abs(moment.x), std::abs(moment.y), std::abs(moment.z) });
+                if (isFinite(moment) && maxComponent > 0.0f)
+                {
+                    const math::Vec3 scaled{ moment.x / maxComponent, moment.y / maxComponent, moment.z / maxComponent };
+                    const auto tip = dipole->GetCenter() + scaled.Normalized() * grid.GetSpacing();
+                    AddLine(vertices, indices, dipole->GetCenter(), tip, magneticStyle.StrongColor);
+                }
             }
         }
     }
@@ -420,8 +505,12 @@ void PhysicsDebugRenderer::RenderOverlay()
     addToggleLine("P", "BROAD PAIRS", m_Settings.ShowBroadPhasePairs);
     addToggleLine("C", "CONTACT POINT", m_Settings.ShowContactPoints);
     addToggleLine("N", "CONTACT NORMAL", m_Settings.ShowContactNormals);
-    addLine("GRAVITY FIELD: " + OnOff(m_Settings.ShowVectorFields),
-        m_Settings.ShowVectorFields ? onColor : offColor);
+    addLine("GRAVITY: " + OnOff(m_Settings.ShowVectorFields) + " POINT: " + OnOff(m_Settings.ShowPointGravityFields),
+        (m_Settings.ShowVectorFields || m_Settings.ShowPointGravityFields) ? onColor : offColor);
+    addLine("ELECTRIC: " + OnOff(m_Settings.ShowElectricFields) + " CHARGE: " + OnOff(m_Settings.ShowPointChargeFields),
+        (m_Settings.ShowElectricFields || m_Settings.ShowPointChargeFields) ? onColor : offColor);
+    addLine("MAGNETIC: " + OnOff(m_Settings.ShowMagneticFields) + " DIPOLE: " + OnOff(m_Settings.ShowDipoleFields),
+        (m_Settings.ShowMagneticFields || m_Settings.ShowDipoleFields) ? onColor : offColor);
 
     SubmitLines(vertices, indices, math::Mat4::Identity(), math::Mat4::Identity());
 }

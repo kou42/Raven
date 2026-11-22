@@ -13,6 +13,13 @@ struct PhysicsFieldDebugLine
     math::Vec3 Color;
 };
 
-bool BuildPhysicsFieldDebugArrow(const PhysicsFieldDebugSample& sample, float referenceMagnitude,
+struct PhysicsFieldDebugArrowStyle
+{
+    float ReferenceMagnitude;
+    math::Vec3 WeakColor;
+    math::Vec3 StrongColor;
+};
+
+bool BuildPhysicsFieldDebugArrow(const PhysicsFieldDebugSample& sample, const PhysicsFieldDebugArrowStyle& style,
     float referenceLength, float maxLength, std::array<PhysicsFieldDebugLine, 3>& lines);
 }

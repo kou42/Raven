@@ -5,12 +5,12 @@
 
 namespace Raven::ph
 {
-bool BuildPhysicsFieldDebugArrow(const PhysicsFieldDebugSample& sample, float referenceMagnitude,
+bool BuildPhysicsFieldDebugArrow(const PhysicsFieldDebugSample& sample, const PhysicsFieldDebugArrowStyle& style,
     float referenceLength, float maxLength, std::array<PhysicsFieldDebugLine, 3>& lines)
 {
     const auto& value = sample.Value;
     if (std::isfinite(value.x) == false || std::isfinite(value.y) == false || std::isfinite(value.z) == false
-        || std::isfinite(referenceMagnitude) == false || referenceMagnitude <= 0.0f
+        || std::isfinite(style.ReferenceMagnitude) == false || style.ReferenceMagnitude <= 0.0f
         || std::isfinite(referenceLength) == false || referenceLength <= 0.0f
         || std::isfinite(maxLength) == false || maxLength <= 0.0f)
     {
@@ -26,7 +26,7 @@ bool BuildPhysicsFieldDebugArrow(const PhysicsFieldDebugSample& sample, float re
     }
     const math::Vec3 direction{ static_cast<float>(value.x / magnitude),
         static_cast<float>(value.y / magnitude), static_cast<float>(value.z / magnitude) };
-    const double relativeMagnitude = magnitude / referenceMagnitude;
+    const double relativeMagnitude = magnitude / style.ReferenceMagnitude;
     const float length = static_cast<float>(
         std::min(relativeMagnitude * referenceLength, static_cast<double>(maxLength)));
     const math::Vec3 tip = sample.Position + direction * length;
@@ -40,9 +40,7 @@ bool BuildPhysicsFieldDebugArrow(const PhysicsFieldDebugSample& sample, float re
     const math::Vec3 side = math::Vec3::Cross(direction, up).Normalized() * (length * 0.15f);
     const math::Vec3 headBase = tip - direction * (length * 0.3f);
     const float colorWeight = static_cast<float>(std::min(relativeMagnitude * 0.5, 1.0));
-    const math::Vec3 weakColor{ 0.25f, 0.65f, 1.0f };
-    const math::Vec3 strongColor{ 1.0f, 0.45f, 0.15f };
-    const math::Vec3 color = weakColor + (strongColor - weakColor) * colorWeight;
+    const math::Vec3 color = style.WeakColor + (style.StrongColor - style.WeakColor) * colorWeight;
     lines = {{ { sample.Position, tip, color }, { tip, headBase + side, color }, { tip, headBase - side, color } }};
     return true;
 }
