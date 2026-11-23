@@ -690,11 +690,11 @@ bool TryRunRemoteDiagnostics(int argc, char** argv, int& result)
     }
     try
     {
-        result = receive == true;
+        result = (receive == true);
 
         if (receive)
         {
-            Receive(options)
+            Receive(options);
         }
         else
         {
