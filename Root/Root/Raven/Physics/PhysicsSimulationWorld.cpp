@@ -11,6 +11,7 @@
 #include "Raven/Scene/Components.h"
 #include "Raven/Scene/Scene.h"
 #include "Raven/Core/CPUProfiler.h"
+#include "Raven/Diagnostics/DiagnosticMeasurement.h"
 
 namespace Raven::ph
 {
@@ -324,8 +325,14 @@ void FluidWorld::StepSimulation(
     //
     // CouplingをParticipant::SimulateFluid()の外へ出すことで、Application/Debug Layerは
     // Scene/RigidBodyとのDomain間実行順序を知らず、FluidWorldだけがFixed Step境界を統括します。
-    StepSimulation(fixedDeltaTime);
-    ResolveCouplings(scene, physicsWorld, fixedDeltaTime);
+    {
+        Diagnostics::TraceScope trace("Physics.Fluid.ParticleSimulation", Diagnostics::DiagnosticCategory::Physics);
+        StepSimulation(fixedDeltaTime);
+    }
+    {
+        Diagnostics::TraceScope trace("Physics.Fluid.Couplings", Diagnostics::DiagnosticCategory::Physics);
+        ResolveCouplings(scene, physicsWorld, fixedDeltaTime);
+    }
     AccumulateCouplingMeasurement(fixedDeltaTime);
 }
 
@@ -465,19 +472,31 @@ void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
     // Electric / Magnetic FieldとCoulomb Forceは毎step現在状態から再計算され、古い値を持ち越しません。
     // System自体は永続所有するため、外部Field RegistryとCoulomb設定だけがstep間で維持されます。
     // GravityとElectromagnetismは優先順位を持たず、Rigid積分前に同じForceへ揃えます。
-    m_AstroWorld.AccumulateGravityForces(scene, fixedDeltaTime);
-    // Magnetic Field評価より先に天体Transformを同期し、このfixed-stepの最新Scene姿勢を使用します。
-    SynchronizeCelestialDipoleMagneticFields(scene);
-    m_ElectromagneticSystem.ApplyElectricFieldForces(scene);
-    m_ElectromagneticSystem.ApplyMagneticFieldForces(scene);
-    m_ElectromagneticSystem.ApplyCoulombForces(scene);
+    {
+        Diagnostics::TraceScope trace("Physics.ExternalForces", Diagnostics::DiagnosticCategory::Physics);
+        m_AstroWorld.AccumulateGravityForces(scene, fixedDeltaTime);
+        // Magnetic Field評価より先に天体Transformを同期し、このfixed-stepの最新Scene姿勢を使用します。
+        SynchronizeCelestialDipoleMagneticFields(scene);
+        m_ElectromagneticSystem.ApplyElectricFieldForces(scene);
+        m_ElectromagneticSystem.ApplyMagneticFieldForces(scene);
+        m_ElectromagneticSystem.ApplyCoulombForces(scene);
+    }
 
     // Fluid -> Rigid反作用はFluid Step内でRigid速度へ反映され、次Fixed StepのRigid積分から利用されます。
-    m_RigidBodyWorld.Step(scene, fixedDeltaTime);
-    m_FluidWorld.StepSimulation(scene, m_RigidBodyWorld, fixedDeltaTime);
-    SynchronizeRigidBodyCollidersToSoftBody(scene);
-    m_SoftBodyWorld.StepSimulation(fixedDeltaTime);
-    ApplySoftBodyReactionsToRigidBodies(scene);
+    {
+        Diagnostics::TraceScope trace("Physics.RigidBody", Diagnostics::DiagnosticCategory::Physics);
+        m_RigidBodyWorld.Step(scene, fixedDeltaTime);
+    }
+    {
+        Diagnostics::TraceScope trace("Physics.Fluid", Diagnostics::DiagnosticCategory::Physics);
+        m_FluidWorld.StepSimulation(scene, m_RigidBodyWorld, fixedDeltaTime);
+    }
+    {
+        Diagnostics::TraceScope trace("Physics.SoftBody", Diagnostics::DiagnosticCategory::Physics);
+        SynchronizeRigidBodyCollidersToSoftBody(scene);
+        m_SoftBodyWorld.StepSimulation(fixedDeltaTime);
+        ApplySoftBodyReactionsToRigidBodies(scene);
+    }
 
     // Fluid/Rigid Couplingが補正したWorld位置も次Fixed Stepまで持ち越さずLocalへ反映します。
     if (scene.EvaluateWorldTransforms() == false)
@@ -485,14 +504,17 @@ void PhysicsSimulationWorld::StepSimulation(Scene& scene, float fixedDeltaTime)
         CPUProfiler::Get().AddCounter("Physics.Transform.SynchronizationFailures", 1.0);
     }
 
-    if (m_GridThermalCoupling != nullptr)
     {
-        // Fluidの更新後に格子温度を確定し、同じStepの環境温度評価へ渡す。
-        m_GridThermalCoupling->Step(fixedDeltaTime);
+        Diagnostics::TraceScope trace("Physics.Thermal", Diagnostics::DiagnosticCategory::Physics);
+        if (m_GridThermalCoupling != nullptr)
+        {
+            // Fluidの更新後に格子温度を確定し、同じStepの環境温度評価へ渡す。
+            m_GridThermalCoupling->Step(fixedDeltaTime);
+        }
+        ThermalSystem::SynchronizeWorld(scene);
+        ThermalSystem::AppendRigidBodyContacts(scene, m_RigidBodyWorld.GetContactManifolds());
+        m_ThermalWorld.Step(fixedDeltaTime);
     }
-    ThermalSystem::SynchronizeWorld(scene);
-    ThermalSystem::AppendRigidBodyContacts(scene, m_RigidBodyWorld.GetContactManifolds());
-    m_ThermalWorld.Step(fixedDeltaTime);
 }
 
 bool PhysicsSimulationWorld::RegisterRigidSoftSphereColliderBinding(
@@ -774,7 +796,11 @@ void PhysicsSimulationWorld::ApplySoftBodyReactionsToRigidBodies(Scene& scene)
 
 void PhysicsSimulationWorld::SynchronizeOutputs()
 {
-    m_FluidWorld.SynchronizeOutputs();
+    {
+        Diagnostics::TraceScope trace("Physics.Fluid.OutputSynchronization", Diagnostics::DiagnosticCategory::Physics);
+        m_FluidWorld.SynchronizeOutputs();
+    }
+    Diagnostics::TraceScope trace("Physics.SoftBody.OutputSynchronization", Diagnostics::DiagnosticCategory::Physics);
     m_SoftBodyWorld.SynchronizeOutputs();
 }
 

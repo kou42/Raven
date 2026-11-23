@@ -2,6 +2,7 @@
 #include "Raven/Scene/SceneGraph.h"
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Core/Event.h"
+#include "Raven/Diagnostics/DiagnosticMeasurement.h"
 #include "Raven/Renderer/Renderer.h"
 #include "Raven/Renderer/Mesh/Mesh.h"
 #include "Raven/Renderer/RHI/RHIDevice.h"
@@ -159,7 +160,7 @@ bool Scene::SetWorldTransform(EntityHandle handle, const TransformComponent& wor
 }
 bool Scene::EvaluateWorldTransforms()
 {
-    RAVEN_PROFILE_SCOPE("Scene.Transforms");
+    Diagnostics::ProfiledTraceScope trace("Scene.Transforms", Diagnostics::DiagnosticCategory::Runtime);
     return m_TransformSystem.Evaluate(*this);
 }
 bool Scene::TryGetEntityWorldMatrix(EntityHandle handle, math::Mat4& world)
@@ -315,12 +316,12 @@ void Scene::OnDestroy()
 
 void Scene::OnUpdate(float dt)
 {
-    RAVEN_PROFILE_SCOPE("Scene.Update");
+    Diagnostics::ProfiledTraceScope trace("Scene.Update", Diagnostics::DiagnosticCategory::Runtime);
 
     // Scene全体だけでなく主要System単位でもScopeを分けます。
     // 後でJob System化する際に「どのSystemを先に並列化すべきか」をFrame単位で判断できます。
     {
-        RAVEN_PROFILE_SCOPE("Scene.GameLogic");
+        Diagnostics::ProfiledTraceScope trace("Scene.GameLogic", Diagnostics::DiagnosticCategory::Runtime);
         OnUpdateGame(dt);
     }
 
@@ -328,7 +329,7 @@ void Scene::OnUpdate(float dt)
     // Destroy Queueは停止中もflushし、Game Logicから予約済みの破棄を滞留させません。
     if (ShouldUpdateSimulation() == false)
     {
-        RAVEN_PROFILE_SCOPE("Scene.DestroyQueue");
+        Diagnostics::ProfiledTraceScope trace("Scene.DestroyQueue", Diagnostics::DiagnosticCategory::Runtime);
         FlushDestroyedEntities();
         EvaluateWorldTransforms();
         return;
@@ -338,7 +339,7 @@ void Scene::OnUpdate(float dt)
     // AnimationSystemがTransformへPoseを反映してからPhysicsへ進むことで、
     // Kinematic Bodyなどは更新済みTransformをPhysics側から参照できます。
     {
-        RAVEN_PROFILE_SCOPE("Scene.Animation");
+        Diagnostics::ProfiledTraceScope trace("Scene.Animation", Diagnostics::DiagnosticCategory::Runtime);
         AnimationSystem::Update(*this, dt);
     }
 
@@ -352,17 +353,17 @@ void Scene::OnUpdate(float dt)
     }
 
     {
-        RAVEN_PROFILE_SCOPE("Scene.Physics");
+        Diagnostics::ProfiledTraceScope trace("Scene.Physics", Diagnostics::DiagnosticCategory::Runtime);
         OnUpdatePhysics(dt);
     }
 
     {
-        RAVEN_PROFILE_SCOPE("Scene.Layers");
+        Diagnostics::ProfiledTraceScope trace("Scene.Layers", Diagnostics::DiagnosticCategory::Runtime);
         OnUpdateLayer(dt);
     }
 
     {
-        RAVEN_PROFILE_SCOPE("Scene.DestroyQueue");
+        Diagnostics::ProfiledTraceScope trace("Scene.DestroyQueue", Diagnostics::DiagnosticCategory::Runtime);
         FlushDestroyedEntities();
     }
     EvaluateWorldTransforms();
@@ -379,7 +380,7 @@ void Scene::OnUpdatePhysics(float dt)
         // Fixed timestepが1 Application frame中に複数回走った場合、Physics Stateだけを連続して進めます。
         // SoftBody Mesh/GPU同期はloop終了後へ集約し、catch-up途中Stateの不要なuploadを避けます。
         {
-            RAVEN_PROFILE_SCOPE("Physics.FixedStep");
+            Diagnostics::ProfiledTraceScope trace("Physics.FixedStep", Diagnostics::DiagnosticCategory::Physics);
             m_PhysicsWorld.StepSimulation(*this, m_FixedDeltaTime);
         }
         m_PhysicsAccumulator -= m_FixedDeltaTime;
@@ -388,7 +389,7 @@ void Scene::OnUpdatePhysics(float dt)
 
     if (fixedStepCount > 0u)
     {
-        RAVEN_PROFILE_SCOPE("Physics.OutputSynchronization");
+        Diagnostics::ProfiledTraceScope trace("Physics.OutputSynchronization", Diagnostics::DiagnosticCategory::Physics);
         m_PhysicsWorld.SynchronizeOutputs();
     }
 
@@ -406,9 +407,13 @@ void Scene::OnUpdatePhysics(float dt)
 
     // 0 Stepのframeも記録し、1回あたりの重さとcatch-up回数を区別できるようにします。
     CPUProfiler::Get().AddCounter("Physics.FixedStep.Count", static_cast<double>(fixedStepCount));
+    Diagnostics::RecordCounter("Physics.FixedStep.Count", static_cast<double>(fixedStepCount),
+        Diagnostics::DiagnosticCategory::Physics);
     CPUProfiler::Get().AddCounter("Physics.FixedStep.SimulatedMilliseconds",
         static_cast<double>(fixedStepCount) * static_cast<double>(m_FixedDeltaTime) * 1000.0);
     CPUProfiler::Get().AddCounter("Physics.FixedStep.DroppedMilliseconds", droppedTime * 1000.0);
+    Diagnostics::RecordCounter("Physics.FixedStep.DroppedMilliseconds", droppedTime * 1000.0,
+        Diagnostics::DiagnosticCategory::Physics);
     CPUProfiler::Get().AddCounter("Physics.FixedStep.AccumulatorMilliseconds", m_PhysicsAccumulator * 1000.0);
 
     // PhysicsDebugRendererには別Worldを再構築させず、このSceneが実際にStepした
