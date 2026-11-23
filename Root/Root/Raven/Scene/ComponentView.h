@@ -4,6 +4,7 @@
 #include <type_traits>
 #include <cstdint>
 #include <array>
+#include <utility>
 
 #include "Raven/Scene/ComponentStorage.h"
 #include "Raven/Scene/Entity.h"
@@ -23,7 +24,7 @@ struct ComponentViewStatistics
     uint64_t AliveChecks = 0; // 候補についてViewが明示的に呼ぶIsEntityAliveの回数。
     uint64_t StorageLookups = 0;
     uint64_t FilterChecks = 0;
-    uint64_t ReadChecks = 0;
+    uint64_t ReadChecks = 0; // 参照取得時に追加で行った所属照合。照合結果を再利用するため現在は0。
     uint64_t ComponentReads = 0;
     uint64_t StructuralChecks = 0;
 };
@@ -33,7 +34,7 @@ struct ComponentViewStatistics
 // swap-and-popと終端Indexの変化で走査の取りこぼしや範囲外参照が起こり得ます。
 // Component値の変更とQueueDestroyEntityは可能です。Flushは走査終了後に行います。
 // 構造変更後はView/IteratorとComponent参照を再取得してください。
-// Typed Storageのpointeeだけを非所有cacheし、Component配列のpointerは保存しません。
+// ViewはTyped Storageを、Iteratorは現在位置のComponentも非所有参照します。
 // SceneのStorage mapがrehashしてもunique_ptrのpointeeは移動しません。
 // Debugは対象Storageの構造変更/Scene::OnDestroy後の使用を例外で検出します。
 // Releaseでも同じ無効化契約を守ってください。Scene自体の破棄後や並列変更は検出対象外です。
@@ -65,9 +66,7 @@ public:
     private:
         void SkipInvalidEntities();
         template<class T>
-        bool Matches(ComponentStorage<T>* storage, EntityIndex index) const;
-        template<class T>
-        T& Read(ComponentStorage<T>* storage, EntityIndex index) const;
+        bool FindComponent(ComponentStorage<T>* pStorage, EntityIndex index, T*& pComponent);
         void Validate() const;
 
     private:
@@ -77,6 +76,7 @@ public:
         std::size_t m_Index = 0;
         ComponentViewStatistics* m_Statistics = nullptr;
         StorageTuple m_Storages{};
+        std::tuple<Components*...> m_CurrentComponents{};
 #ifndef NDEBUG
         std::array<uint64_t, sizeof...(Components)> m_Versions{};
         uint64_t m_LifetimeVersion = 0;
