@@ -19,6 +19,58 @@ namespace Raven::ph::tests
 void RunFluidSPHSelfTests()
 {
     {
+        SPHSettings settings;
+        settings.SmoothingRadius = 0.125f;
+        settings.StableTimeStepEnabled = false;
+        SPHSolver solver(settings);
+        SPHSolver reference(settings);
+
+        const auto checkStep = [&](std::vector<FluidParticle>& particles)
+        {
+            constexpr float deltaTime = 1.0e-4f;
+            auto expected = particles;
+            // 単独APIはGridを探索するため、Substep内の近傍再利用結果と比較できます。
+            reference.ComputeDensityAndPressure(expected);
+            reference.ComputeForces(expected);
+            reference.Integrate(expected, deltaTime);
+            reference.ResolveBoundary(expected);
+            solver.Step(particles, deltaTime);
+
+            for (std::size_t index = 0; index < particles.size(); ++index)
+            {
+                const auto& actual = particles[index];
+                const auto& expectedParticle = expected[index];
+                assert(actual.Density == expectedParticle.Density);
+                assert(actual.Pressure == expectedParticle.Pressure);
+                assert((actual.Force - expectedParticle.Force).LengthSq() == 0.0f);
+                assert((actual.Velocity - expectedParticle.Velocity).LengthSq() == 0.0f);
+                assert((actual.Position - expectedParticle.Position).LengthSq() == 0.0f);
+            }
+        };
+
+        std::vector<FluidParticle> particles(6);
+        particles[1].Position.x = 0.0625f;
+        particles[1].Velocity.y = 0.5f;
+        particles[2].Position.x = -0.0625f;
+        particles[2].Mass = 0.0f;
+        particles[3].Position.x = 0.125f;
+        particles[4].Position.x = 0.5f;
+        checkStep(particles);
+
+        // 全粒子が異なる位置で互いの半径内に入り、近傍バッファの上限を超えます。
+        std::vector<FluidParticle> denseParticles(514);
+        for (std::size_t index = 0; index < denseParticles.size(); ++index)
+        {
+            denseParticles[index].Position.x = static_cast<float>(index) * 0.000125f;
+        }
+        checkStep(denseParticles);
+
+        // 上限超過の後も、移動済みの粒子から新しいSubstep用の近傍を構築します。
+        particles[4].Position.x = 0.03125f;
+        checkStep(particles);
+    }
+
+    {
         Scene scene;
         const auto source = DenseSDFSource::CreateSphere({}, 1.0f);
         auto obstacle = scene.CreateEntity("SPH signed distance boundary");
@@ -47,6 +99,46 @@ void RunFluidSPHSelfTests()
             h);
         assert(gradient.x < 0.0f);
         assert(SPHKernel::EvaluateViscosityLaplacian(0.5f, h) > 0.0f);
+    }
+
+    // 負座標・Cell境界を含め、通常検索と共有検索のVisit順が一致することを確認します。
+    {
+        std::vector<FluidParticle> particles(6u);
+        particles[0].Position = { -1.0f, 0.0f, 0.0f };
+        particles[1].Position = { 0.0f, -0.5f, 0.0f };
+        particles[2].Position = { -0.25f, 0.0f, -0.5f };
+        particles[3].Position = { -0.875f, 0.0f, 0.0f };
+        particles[4].Position = { 0.5f, 0.5f, 0.0f };
+        particles[5].Position = { 1.5f, 0.0f, 0.0f };
+        constexpr float radius = 1.0f;
+        constexpr float cellSizes[] = { 1.0f, 0.5f, 0.25f };
+        for (float cellSize : cellSizes)
+        {
+            FluidSpatialHashGrid grid(cellSize);
+            const auto compareQueries = [&]()
+            {
+                for (const auto& particle : particles)
+                {
+                    std::vector<uint32_t> expected;
+                    std::vector<uint32_t> actual;
+                    grid.ForEachNeighborParticle(particle.Position, radius,
+                        [&](uint32_t index) { expected.push_back(index); });
+                    grid.ForEachPreparedNeighborParticle(particle.Position, radius,
+                        [&](uint32_t index) { actual.push_back(index); });
+                    assert(actual == expected);
+                }
+            };
+            grid.Build(particles);
+            grid.PrepareNeighborBuckets(radius);
+            compareQueries();
+
+            // 粒子を別Cellへ移して再Buildした後も、古い共有結果を参照しないことを確認します。
+            particles[5].Position.x -= 0.5f;
+            grid.Build(particles);
+            compareQueries();
+            grid.PrepareNeighborBuckets(radius);
+            compareQueries();
+        }
     }
 
     // Neighbor QueryはCellSizeより大きな検索半径でも必要Cellを走査します。

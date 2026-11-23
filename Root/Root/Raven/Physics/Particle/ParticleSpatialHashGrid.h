@@ -57,6 +57,9 @@ public:
     // 同一particleIndexを複数回登録しないことは呼び出し側の責務です。
     void AddParticle(uint32_t particleIndex, const math::Vec3& position);
 
+    // Build完了後に指定半径の周辺Cellを共有します。登録内容の変更で無効になります。
+    void PrepareNeighborBuckets(float searchRadius);
+
     // Allocatorに依存しないCandidate Pair生成です。
     // std::vector<ParticleSpatialHashPair>だけでなく、SolverTemporaryAllocatorを持つvectorも
     // 同じ走査をそのまま利用できるため、SoftBody側に重複した13方向走査を持たせません。
@@ -134,7 +137,44 @@ public:
         const int32_t cellRange = static_cast<int32_t>(
             std::ceil(clampedSearchRadius * m_InverseCellSize));
         const CellCoord centerCell = ComputeCellCoord(position);
+        ForEachNeighborBucket(centerCell, cellRange, [&](const CellBucket& bucket)
+        {
+            VisitBucket(bucket, visitor);
+        });
+    }
 
+    template <typename Visitor>
+    void ForEachPreparedNeighborParticle(
+        const math::Vec3& position,
+        float searchRadius,
+        Visitor&& visitor) const
+    {
+        if (m_HasPreparedNeighbors && searchRadius == m_PreparedSearchRadius)
+        {
+            const CellBucket* pCenter = FindActiveBucket(ComputeCellCoord(position));
+            if (pCenter != nullptr)
+            {
+                const PreparedNeighborRange& range = m_PreparedNeighborRanges[
+                    static_cast<std::size_t>(pCenter - m_Buckets.data())];
+                for (uint32_t index = range.Begin; index < range.End; ++index)
+                {
+                    VisitBucket(m_Buckets[m_PreparedNeighborBuckets[index]], visitor);
+                }
+                return;
+            }
+        }
+        ForEachNeighborParticle(position, searchRadius, std::forward<Visitor>(visitor));
+    }
+
+    std::size_t GetOccupiedCellCount() const { return m_ActiveBucketIndices.size(); }
+    std::size_t GetParticleCount() const { return m_ParticleCount; }
+
+private:
+    struct CellCoord;
+
+    template <typename Visitor>
+    void ForEachNeighborBucket(const CellCoord& centerCell, int32_t cellRange, Visitor&& visitor) const
+    {
         for (int32_t z = -cellRange; z <= cellRange; ++z)
         {
             for (int32_t y = -cellRange; y <= cellRange; ++y)
@@ -146,28 +186,16 @@ public:
                     neighborCell.Y = centerCell.Y + y;
                     neighborCell.Z = centerCell.Z + z;
 
-                    const CellBucket* bucket = FindActiveBucket(neighborCell);
-                    if (bucket == nullptr)
+                    const CellBucket* pBucket = FindActiveBucket(neighborCell);
+                    if (pBucket != nullptr)
                     {
-                        continue;
-                    }
-
-                    const ParticleIndexBuffer& particleIndices = bucket->ParticleIndices;
-                    for (std::size_t particleIndex = 0u;
-                         particleIndex < particleIndices.Count;
-                         ++particleIndex)
-                    {
-                        visitor(particleIndices.Storage.data()[particleIndex]);
+                        visitor(*pBucket);
                     }
                 }
             }
         }
     }
 
-    std::size_t GetOccupiedCellCount() const { return m_ActiveBucketIndices.size(); }
-    std::size_t GetParticleCount() const { return m_ParticleCount; }
-
-private:
     struct CellCoord
     {
         int32_t X = 0;
@@ -206,6 +234,22 @@ private:
         ParticleIndexBuffer ParticleIndices;
         uint32_t Generation = 0u;
     };
+
+    struct PreparedNeighborRange
+    {
+        uint32_t Begin = 0;
+        uint32_t End = 0;
+    };
+
+    template <typename Visitor>
+    static void VisitBucket(const CellBucket& bucket, Visitor& visitor)
+    {
+        const ParticleIndexBuffer& indices = bucket.ParticleIndices;
+        for (std::size_t index = 0; index < indices.Count; ++index)
+        {
+            visitor(indices.Storage.data()[index]);
+        }
+    }
 
     struct NeighborOffset
     {
@@ -269,6 +313,10 @@ private:
     std::size_t m_BucketMask = 0u;
     uint32_t m_CurrentGeneration = 0u;
     std::size_t m_ParticleCount = 0u;
+    std::vector<PreparedNeighborRange> m_PreparedNeighborRanges;
+    std::vector<uint32_t> m_PreparedNeighborBuckets;
+    float m_PreparedSearchRadius = 0.0f;
+    bool m_HasPreparedNeighbors = false;
 };
 
 } // namespace ph

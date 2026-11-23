@@ -4,6 +4,7 @@
 #include "Raven/Core/Input.h"
 #include "Raven/Core/KeyCodes.h"
 #include "Raven/Core/MouseCodes.h"
+#include "Raven/Diagnostics/DiagnosticMeasurement.h"
 #include "Raven/Editor/Command/CreateEntityCommand.h"
 #include "Raven/Editor/Command/DeleteEntityCommand.h"
 #include "Raven/Editor/Command/RenameEntityCommand.h"
@@ -888,6 +889,8 @@ void EditorLayer::OnRender()
         return;
     }
 
+    // Application.LayerRenderの内側で、Viewportの準備と描画命令発行を分けて追跡します。
+    Diagnostics::TraceScope trace("Editor.ViewportRender", Diagnostics::DiagnosticCategory::RHI);
     Scene* activeScene = m_Application->GetScene();
 
     if (m_ExplicitViewportRenderingEnabled == true)

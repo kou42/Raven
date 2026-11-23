@@ -589,8 +589,8 @@ void RunSceneViewSelfTests()
     Require(result.Candidates == 4 && statistics.Candidates == 4 && statistics.Matches == 2,
         "Smallest storage and diagnostics must agree.");
     Require(statistics.StorageLookups == 3 && statistics.FilterChecks == 8
-        && statistics.ReadChecks == 4 && statistics.AliveChecks == 4 && statistics.ComponentReads == 6,
-        "View diagnostics must count only actual lookups/checks/reads, excluding the base storage.");
+        && statistics.ReadChecks == 0 && statistics.AliveChecks == 4 && statistics.ComponentReads == 6,
+        "View dereference must reuse filter results without repeating membership checks.");
     ComponentViewStatistics singleStatistics;
     Scan(scene, true, &singleStatistics);
     Require(singleStatistics.StorageLookups == 1 && singleStatistics.FilterChecks == 0

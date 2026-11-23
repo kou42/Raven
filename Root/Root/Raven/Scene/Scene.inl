@@ -506,7 +506,7 @@ ComponentView<Components...>::Iterator::Iterator(Scene* scene, const IComponentS
     m_Statistics = statistics;
     if (scene != nullptr)
     {
-        // 互換ConstructorもComponent配列ではなくStorageのpointeeを解決して保存します。
+        // 互換ConstructorもViewと同じ経路でStorageを解決し、現在位置を確定します。
         *this = Iterator(ComponentView(*scene, baseStorage, statistics), index);
     }
     else if (baseStorage != nullptr)
@@ -562,12 +562,11 @@ void ComponentView<Components...>::Iterator::SkipInvalidEntities()
             HasComponent<TagComponent>(entityID)
         */
 
-        if (isAlive
-            &&
-            (
-                std::apply([&](auto*... storage) { return (Matches(storage, entityIndex) && ...); }, m_Storages)
-                )
-            )
+        if (isAlive && [&]<std::size_t... Indices>(std::index_sequence<Indices...>)
+            {
+                return (FindComponent(std::get<Indices>(m_Storages), entityIndex,
+                    std::get<Indices>(m_CurrentComponents)) && ...);
+            }(std::index_sequence_for<Components...>{}))
         {
             if (m_Statistics != nullptr)
             {
@@ -583,38 +582,23 @@ void ComponentView<Components...>::Iterator::SkipInvalidEntities()
 
 template<class... Components>
 template<class T>
-bool ComponentView<Components...>::Iterator::Matches(ComponentStorage<T>* storage, EntityIndex index) const
+bool ComponentView<Components...>::Iterator::FindComponent(
+    ComponentStorage<T>* pStorage, EntityIndex index, T*& pComponent)
 {
     // 候補Storage自身の所属はDense列から取得した時点で成立します。同じ照合を繰り返しません。
-    if (static_cast<const IComponentStorage*>(storage) == m_BaseStorage)
+    if (static_cast<const IComponentStorage*>(pStorage) == m_BaseStorage)
     {
+        pComponent = std::addressof(pStorage->GetByIndex(m_Index));
         return true;
     }
     if (m_Statistics != nullptr)
     {
         ++m_Statistics->FilterChecks;
     }
-    return storage->Has(index);
-}
-
-template<class... Components>
-template<class T>
-T& ComponentView<Components...>::Iterator::Read(ComponentStorage<T>* storage, EntityIndex index) const
-{
-    if (m_Statistics != nullptr)
-    {
-        ++m_Statistics->ComponentReads;
-    }
-    if (static_cast<const IComponentStorage*>(storage) == m_BaseStorage)
-    {
-        return storage->GetByIndex(m_Index);
-    }
-    if (m_Statistics != nullptr)
-    {
-        ++m_Statistics->ReadChecks;
-    }
-    // 非候補StorageのSparse index照合は安全なGetへ残します。Component参照は保存しません。
-    return storage->Get(index);
+    // 非候補Storageは所属を確認したときの参照を保持し、読出し時のSparse照合を省きます。
+    // 走査中の構造変更は禁止されているため、現在位置の参照を再利用できます。
+    pComponent = pStorage->TryGet(index);
+    return pComponent != nullptr;
 }
 
 template<class... Components>
@@ -652,10 +636,14 @@ auto ComponentView<Components...>::Iterator::operator*() const
     const EntityIndex entityIndex = m_BaseStorage->GetEntityIndex(m_Index);
 
     const EntityHandle handle{entityIndex, m_Scene->GetEntityGeneration(entityIndex)};
-    return std::apply([&](auto*... storage)
+    if (m_Statistics != nullptr)
     {
-        return std::tuple<Entity, Components&...>(Entity(handle, m_Scene), Read(storage, entityIndex)...);
-    }, m_Storages);
+        m_Statistics->ComponentReads += sizeof...(Components);
+    }
+    return std::apply([&](auto*... pComponents)
+    {
+        return std::tuple<Entity, Components&...>(Entity(handle, m_Scene), *pComponents...);
+    }, m_CurrentComponents);
 }
 
 template<class... Components>

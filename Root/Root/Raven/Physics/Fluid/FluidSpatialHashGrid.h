@@ -28,6 +28,7 @@ public:
 
     void Clear();
     void Build(const std::vector<FluidParticle>& particles);
+    void PrepareNeighborBuckets(float searchRadius);
 
     template <typename Visitor>
     void ForEachNeighborParticle(
@@ -39,6 +40,16 @@ public:
             position,
             searchRadius,
             std::forward<Visitor>(visitor));
+    }
+
+    template <typename Visitor>
+    void ForEachPreparedNeighborParticle(
+        const math::Vec3& position,
+        float searchRadius,
+        Visitor&& visitor) const
+    {
+        m_Core.ForEachPreparedNeighborParticle(
+            position, searchRadius, std::forward<Visitor>(visitor));
     }
 
     std::size_t GetOccupiedCellCount() const;

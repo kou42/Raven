@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -44,12 +45,23 @@ public:
     bool WasLastSubstepLimitReached() const { return m_LastSubstepLimitReached; }
 
 private:
-    void ComputeForcesUsingCurrentGrid(std::vector<FluidParticle>& particles) const;
+    struct CachedNeighbor
+    {
+        uint32_t ParticleIndex;
+        float DistanceSquared;
+    };
+
+    bool ComputeDensity(std::vector<FluidParticle>& particles, bool shouldCacheNeighbors);
+    void ComputeForcesUsingCurrentGrid(
+        std::vector<FluidParticle>& particles, bool hasCachedNeighbors) const;
     void AdvanceSubstep(std::vector<FluidParticle>& particles, float deltaTime);
 
 private:
     SPHSettings m_Settings{};
     FluidSpatialHashGrid m_SpatialHash;
+    // 各行の近傍はGridの走査順を維持し、位置を更新する前のForce計算だけで使用します。
+    std::vector<CachedNeighbor> m_CachedNeighbors;
+    std::vector<std::size_t> m_CachedNeighborOffsets;
     uint32_t m_LastSubstepCount = 0u;
     float m_LastMinimumSubstepDeltaTime = 0.0f;
     bool m_LastSubstepLimitReached = false;
