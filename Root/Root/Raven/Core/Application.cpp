@@ -1,5 +1,7 @@
 #include "Application.h"
 #include "Raven/Core/Input.h"
+#include "Raven/Diagnostics/DiagnosticMeasurement.h"
+#include "Raven/Platform/OpenGL/OpenGLContext.h"
 #include "Raven/UI/Navigation/UIScreen.h"
 #include "Raven/Renderer/RendererFrameDiagnostics.h"
 #include "Raven/Scene/SceneGame.h"
@@ -1626,6 +1628,8 @@ void Application::Run()
 
     uint32_t explicitWidth = m_Window->GetFramebufferWidth();
     uint32_t explicitHeight = m_Window->GetFramebufferHeight();
+    OpenGLFrameTimer openGLFrameTimer(m_Window->GetBackend() == RHIBackend::OpenGL
+        ? static_cast<GLFWwindow*>(m_Window->GetNativeWindow()) : nullptr);
     while (m_Running)
     {
         const uint32_t width = m_Window->GetFramebufferWidth();
@@ -1712,6 +1716,10 @@ void Application::Run()
         Renderer::BeginFrame();
         RendererFrameDiagnostics frameDiagnostics;
 
+        // Main Contextの描画命令を挟みます。補助WindowやPresentは計測境界の外です。
+        // Timestamp間にはCPUから次の命令を待つGPUの空き時間も含まれ得ます。
+        openGLFrameTimer.Begin();
+
         // ====================================================================
         // Raven UI frame begin
         // ====================================================================
@@ -1767,7 +1775,11 @@ void Application::Run()
             {
                 if (instance.ScenePointer != nullptr)
                 {
-                    instance.ScenePointer->OnUpdate(frameDeltaTime);
+                    {
+                        Diagnostics::TraceScope trace("Application.SceneUpdate", Diagnostics::DiagnosticCategory::RHI);
+                        instance.ScenePointer->OnUpdate(frameDeltaTime);
+                    }
+                    Diagnostics::TraceScope trace("Application.SceneRender", Diagnostics::DiagnosticCategory::RHI);
                     instance.ScenePointer->OnRender();
                 }
             });
@@ -1782,7 +1794,11 @@ void Application::Run()
         {
             if (layer != nullptr)
             {
-                layer->OnUpdate(frameDeltaTime);
+                {
+                    Diagnostics::TraceScope trace("Application.LayerUpdate", Diagnostics::DiagnosticCategory::RHI);
+                    layer->OnUpdate(frameDeltaTime);
+                }
+                Diagnostics::TraceScope trace("Application.LayerRender", Diagnostics::DiagnosticCategory::RHI);
                 layer->OnRender();
             }
         }
@@ -1795,6 +1811,7 @@ void Application::Run()
         // 別Contextを描くことでEditor UIとの描画順も明確に分離します。
         if (m_RavenUIEnabled == true)
         {
+            Diagnostics::TraceScope trace("Application.MainUIRender", Diagnostics::DiagnosticCategory::RHI);
             auto uiAllocations = m_UIContext.MeasureAllocations();
             // 全Runtime/Layer描画後の値をRetained UIへ反映します。
             // OnUpdate中にStatisticsを取得すると後続LayerのDraw Callが欠落するため、
@@ -1831,6 +1848,8 @@ void Application::Run()
             }
             m_UIContext.EndFrame();
         }
+        openGLFrameTimer.End();
+
         // Statistics更新後に前回の値Snapshotを置換します。描画しなかった補助Windowの
         // 古いFrameは追加せず、次Frameへ同じ値を繰り返し計上しません。
         m_CompletedUIFrameMetrics.Windows.clear();
@@ -1977,15 +1996,22 @@ void Application::Run()
         }
 
         // GLFWのProcess共通Event Queueを一度処理し、補助WindowのCloseも安全に確定します。
-        m_WindowManager.PollEvents();
+        {
+            Diagnostics::TraceScope trace("Application.PollEvents", Diagnostics::DiagnosticCategory::RHI);
+            m_WindowManager.PollEvents();
+        }
         // Window外でMouse Upを取りこぼしても、次FrameへDrag/Captureを残しません。
         CompleteReleasedUIWindowDrags();
 
-        if (m_ExplicitSceneRuntime == nullptr &&
-            m_SceneFrame->Present() != RHIFrameResult::Success)
+        if (m_ExplicitSceneRuntime == nullptr)
         {
-            m_Running = false;
-            break;
+            // Swap完了までのCPU時間です。VSyncやDriver側の待機を含み得ます。
+            Diagnostics::TraceScope trace("Application.MainPresent", Diagnostics::DiagnosticCategory::RHI);
+            if (m_SceneFrame->Present() != RHIFrameResult::Success)
+            {
+                m_Running = false;
+                break;
+            }
         }
 
         // Scene / Layer / UIの更新・描画とPresentがすべて完了した後だけ、
