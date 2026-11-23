@@ -1,6 +1,7 @@
 #include "Raven/Physics/Fluid/FluidSpatialHashGrid.h"
 
 #include "Raven/Core/CPUProfiler.h"
+#include "Raven/Diagnostics/DiagnosticMeasurement.h"
 
 namespace Raven
 {
@@ -29,7 +30,8 @@ void FluidSpatialHashGrid::Clear()
 
 void FluidSpatialHashGrid::Build(const std::vector<FluidParticle>& particles)
 {
-    RAVEN_PROFILE_SCOPE("Physics.Fluid.SPH.SpatialHashBuild");
+    Diagnostics::ProfiledTraceScope trace(
+        "Physics.Fluid.SPH.SpatialHashBuild", Diagnostics::DiagnosticCategory::Physics);
 
     m_Core.BeginBuild(particles.size());
 
@@ -48,6 +50,13 @@ void FluidSpatialHashGrid::Build(const std::vector<FluidParticle>& particles)
         static_cast<double>(m_Core.GetCellSize()));
     profiler.AddCounter("Physics.Fluid.SPH.SpatialHashOccupiedCellCount",
         static_cast<double>(m_Core.GetOccupiedCellCount()));
+}
+
+void FluidSpatialHashGrid::PrepareNeighborBuckets(float searchRadius)
+{
+    Diagnostics::TraceScope trace("Physics.Fluid.SPH.PrepareNeighborBuckets",
+        Diagnostics::DiagnosticCategory::Physics);
+    m_Core.PrepareNeighborBuckets(searchRadius);
 }
 
 std::size_t FluidSpatialHashGrid::GetOccupiedCellCount() const
