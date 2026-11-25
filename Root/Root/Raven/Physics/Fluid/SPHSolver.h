@@ -6,6 +6,7 @@
 
 #include "Raven/Physics/Fluid/FluidParticle.h"
 #include "Raven/Physics/Fluid/FluidSpatialHashGrid.h"
+#include "Raven/Physics/Fluid/SPHKernel.h"
 #include "Raven/Physics/Fluid/SPHSettings.h"
 
 namespace Raven
@@ -51,17 +52,26 @@ private:
         float DistanceSquared;
     };
 
+    struct NeighborForceTerms
+    {
+        float Mass = 0.0f;
+        float PressureOverDensitySquared = 0.0f;
+        float InverseDensity = 0.0f;
+    };
+
     bool ComputeDensity(std::vector<FluidParticle>& particles, bool shouldCacheNeighbors);
     void ComputeForcesUsingCurrentGrid(
-        std::vector<FluidParticle>& particles, bool hasCachedNeighbors) const;
+        std::vector<FluidParticle>& particles, bool hasCachedNeighbors);
     void AdvanceSubstep(std::vector<FluidParticle>& particles, float deltaTime);
 
 private:
     SPHSettings m_Settings{};
+    SPHKernel m_Kernel{m_Settings.SmoothingRadius};
     FluidSpatialHashGrid m_SpatialHash;
     // 各行の近傍はGridの走査順を維持し、位置を更新する前のForce計算だけで使用します。
     std::vector<CachedNeighbor> m_CachedNeighbors;
     std::vector<std::size_t> m_CachedNeighborOffsets;
+    std::vector<NeighborForceTerms> m_NeighborForceTerms;
     uint32_t m_LastSubstepCount = 0u;
     float m_LastMinimumSubstepDeltaTime = 0.0f;
     bool m_LastSubstepLimitReached = false;

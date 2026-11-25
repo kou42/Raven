@@ -15,6 +15,12 @@ namespace ph
 class SPHKernel
 {
 public:
+    explicit SPHKernel(float smoothingRadius);
+
+    float EvaluatePoly6Density(float distanceSq) const;
+    math::Vec3 EvaluateSpikyGradient(const math::Vec3& displacement, float distance) const;
+    float EvaluateViscosityLaplacian(float distance) const;
+
     // 3D Poly6 Kernel:
     // W(r, h) = 315 / (64 * pi * h^9) * (h^2 - r^2)^3, 0 <= r <= h
     static float EvaluatePoly6Density(float distanceSq, float smoothingRadius);
@@ -30,6 +36,12 @@ public:
     // 3D Viscosity Kernel Laplacian:
     // laplacian W = 45 / (pi * h^6) * (h-r), 0 <= r <= h
     static float EvaluateViscosityLaplacian(float distance, float smoothingRadius);
+
+private:
+    float m_SmoothingRadius;
+    float m_SmoothingRadiusSq;
+    float m_Poly6Coefficient = 0.0f;
+    float m_SpikyCoefficient = 0.0f;
 };
 
 } // namespace ph

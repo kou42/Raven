@@ -9,7 +9,6 @@
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Diagnostics/DiagnosticMeasurement.h"
 #include "Raven/Math/Math.h"
-#include "Raven/Physics/Fluid/SPHKernel.h"
 
 namespace Raven
 {
@@ -56,6 +55,7 @@ void SPHSolver::SetSettings(const SPHSettings& settings)
 {
     m_Settings = settings;
     m_Settings.SmoothingRadius = std::max(settings.SmoothingRadius, MinimumSmoothingRadius);
+    m_Kernel = SPHKernel(m_Settings.SmoothingRadius);
     m_Settings.SpatialHashCellSizeScale = std::max(
         settings.SpatialHashCellSizeScale,
         MinimumSpatialHashCellSizeScale);
@@ -142,7 +142,7 @@ bool SPHSolver::ComputeDensity(std::vector<FluidParticle>& particles, bool shoul
 
             ++acceptedNeighborCount;
             density += std::max(0.0f, neighbor.Mass)
-                * SPHKernel::EvaluatePoly6Density(rSq, h);
+                * m_Kernel.EvaluatePoly6Density(rSq);
 
             // 圧力はこの後に更新されるため、ここでは位置だけで確定する条件を保存します。
             if (hasCachedNeighbors == true && j != i && (rSq <= nearZeroDistanceSq) == false)
@@ -219,11 +219,32 @@ void SPHSolver::ComputeForces(std::vector<FluidParticle>& particles)
 }
 
 void SPHSolver::ComputeForcesUsingCurrentGrid(
-    std::vector<FluidParticle>& particles, bool hasCachedNeighbors) const
+    std::vector<FluidParticle>& particles, bool hasCachedNeighbors)
 {
     Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.Force", Diagnostics::DiagnosticCategory::Physics);
     const float h = m_Settings.SmoothingRadius;
     const float hSq = h * h;
+    const bool hasViscosity = m_Settings.Viscosity > 0.0f;
+
+    // DensityとPressureが確定した時点で、複数の近傍から参照される除算を粒子ごとに済ませます。
+    // 公開ComputeForcesも呼び出し時点の粒子データから毎回作り直します。
+    m_NeighborForceTerms.resize(particles.size());
+    for (std::size_t i = 0u; i < particles.size(); ++i)
+    {
+        const FluidParticle& particle = particles[i];
+        NeighborForceTerms& terms = m_NeighborForceTerms[i];
+        const float mass = std::max(0.0f, particle.Mass);
+        if (mass <= math::Epsilon || particle.Density <= math::Epsilon)
+        {
+            terms = {};
+            continue;
+        }
+
+        terms.Mass = mass;
+        terms.PressureOverDensitySquared =
+            particle.Pressure / (particle.Density * particle.Density);
+        terms.InverseDensity = hasViscosity ? 1.0f / particle.Density : 0.0f;
+    }
 
     // Force側はself、無効Mass/Density、support radius外を除外した後の数をAcceptedとします。
     // Density側との差を見ることで、密度計算では有効でも力計算には使われない候補量も追跡できます。
@@ -241,11 +262,12 @@ void SPHSolver::ComputeForcesUsingCurrentGrid(
         }
 
         const float inverseDensityISq = 1.0f / (particle.Density * particle.Density);
-        const auto applyForce = [&](const FluidParticle& neighbor,
-            const math::Vec3& displacement, float rSq)
+        const float pressureTermI = particle.Pressure * inverseDensityISq;
+        const float viscosityMassI = massI * m_Settings.Viscosity;
+        const auto applyForce = [&](uint32_t neighborIndex, const math::Vec3& displacement, float rSq)
         {
-            const float massJ = std::max(0.0f, neighbor.Mass);
-            if (massJ <= math::Epsilon || neighbor.Density <= math::Epsilon)
+            const NeighborForceTerms& terms = m_NeighborForceTerms[neighborIndex];
+            if (terms.Mass <= math::Epsilon)
             {
                 return;
             }
@@ -254,16 +276,15 @@ void SPHSolver::ComputeForcesUsingCurrentGrid(
             ++acceptedNeighborCount;
 
             const float r = std::sqrt(rSq);
-            const float pressureTerm = particle.Pressure * inverseDensityISq
-                + neighbor.Pressure / (neighbor.Density * neighbor.Density);
-            particle.Force += SPHKernel::EvaluateSpikyGradient(displacement, r, h)
-                * (-massI * massJ * pressureTerm);
+            const float pressureTerm = pressureTermI + terms.PressureOverDensitySquared;
+            particle.Force += m_Kernel.EvaluateSpikyGradient(displacement, r)
+                * (-massI * terms.Mass * pressureTerm);
 
-            if (m_Settings.Viscosity > 0.0f)
+            if (hasViscosity == true)
             {
-                particle.Force += (neighbor.Velocity - particle.Velocity)
-                    * (massI * m_Settings.Viscosity * massJ / neighbor.Density
-                        * SPHKernel::EvaluateViscosityLaplacian(r, h));
+                particle.Force += (particles[neighborIndex].Velocity - particle.Velocity)
+                    * (viscosityMassI * terms.Mass * terms.InverseDensity
+                        * m_Kernel.EvaluateViscosityLaplacian(r));
             }
         };
 
@@ -276,12 +297,14 @@ void SPHSolver::ComputeForcesUsingCurrentGrid(
             {
                 const CachedNeighbor& cached = m_CachedNeighbors[index];
                 const FluidParticle& neighbor = particles[cached.ParticleIndex];
-                applyForce(neighbor, particle.Position - neighbor.Position, cached.DistanceSquared);
+                applyForce(cached.ParticleIndex, particle.Position - neighbor.Position, cached.DistanceSquared);
             }
         }
         else
         {
-            m_SpatialHash.ForEachNeighborParticle(particle.Position, h, [&](uint32_t j)
+            // 粒子近傍キャッシュの上限を超えても、同じSubstepの密度計算が準備したCell一覧は再利用できます。
+            // 単独ComputeForcesや準備上限に達したGridでは、既存のCell探索へ戻ります。
+            m_SpatialHash.ForEachPreparedNeighborParticle(particle.Position, h, [&](uint32_t j)
             {
                 ++candidateVisitCount;
                 if (j >= particles.size() || j == static_cast<uint32_t>(i))
@@ -296,7 +319,7 @@ void SPHSolver::ComputeForcesUsingCurrentGrid(
                 {
                     return;
                 }
-                applyForce(neighbor, displacement, rSq);
+                applyForce(j, displacement, rSq);
             });
         }
     }
