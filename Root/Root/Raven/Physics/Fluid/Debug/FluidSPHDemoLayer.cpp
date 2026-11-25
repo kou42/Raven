@@ -1,4 +1,4 @@
-﻿#include "Raven/Physics/Fluid/Debug/FluidSPHDemoLayer.h"
+#include "Raven/Physics/Fluid/Debug/FluidSPHDemoLayer.h"
 
 #include <algorithm>
 #include <cmath>
@@ -260,7 +260,7 @@ void FluidSPHDemoLayer::SimulateFluid(float fixedDeltaTime)
 
     // Fluid Participantは純粋な数値計算だけを担当します。
     // Static Collider / Dynamic RigidBody Couplingは、このStep直後にFluidWorldが一度だけ解決します。
-    m_Solver.Step(m_Particles, fixedDeltaTime);
+    m_Solver.Step(m_Particles, fixedDeltaTime, &m_Application.GetJobSystem());
 }
 
 void FluidSPHDemoLayer::SynchronizeFluidOutput()

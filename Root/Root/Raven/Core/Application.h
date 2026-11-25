@@ -333,6 +333,7 @@ public:
     const SceneFactory& GetSceneFactory() const { return m_SceneFactory; }
     SceneManager& GetSceneManager() { return m_SceneManager; }
     const SceneManager& GetSceneManager() const { return m_SceneManager; }
+    JobSystem& GetJobSystem() { return m_JobSystem; }
     SceneTransitionController& GetSceneTransitionController() { return m_SceneTransitionController; }
     const SceneTransitionController& GetSceneTransitionController() const { return m_SceneTransitionController; }
     SceneStreamingController& GetSceneStreamingController() { return m_SceneStreamingController; }
