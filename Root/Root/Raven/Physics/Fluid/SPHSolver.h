@@ -11,6 +11,8 @@
 
 namespace Raven
 {
+class JobSystem;
+
 namespace ph
 {
 
@@ -39,7 +41,8 @@ public:
 
     void Integrate(std::vector<FluidParticle>& particles, float deltaTime) const;
     void ResolveBoundary(std::vector<FluidParticle>& particles) const;
-    void Step(std::vector<FluidParticle>& particles, float deltaTime);
+    // JobSystemはこの呼び出し中だけ借用します。同じPoolのWorkerからは渡さないでください。
+    void Step(std::vector<FluidParticle>& particles, float deltaTime, JobSystem* pJobSystem = nullptr);
 
     uint32_t GetLastSubstepCount() const { return m_LastSubstepCount; }
     float GetLastMinimumSubstepDeltaTime() const { return m_LastMinimumSubstepDeltaTime; }
@@ -59,10 +62,18 @@ private:
         float InverseDensity = 0.0f;
     };
 
+    struct ForceNeighborCounts
+    {
+        uint64_t m_Candidates = 0u;
+        uint64_t m_Accepted = 0u;
+    };
+
     bool ComputeDensity(std::vector<FluidParticle>& particles, bool shouldCacheNeighbors);
     void ComputeForcesUsingCurrentGrid(
-        std::vector<FluidParticle>& particles, bool hasCachedNeighbors);
-    void AdvanceSubstep(std::vector<FluidParticle>& particles, float deltaTime);
+        std::vector<FluidParticle>& particles, bool hasCachedNeighbors, JobSystem* pJobSystem);
+    ForceNeighborCounts ComputeForceRange(std::vector<FluidParticle>& particles,
+        std::size_t rangeBegin, std::size_t rangeEnd, bool hasCachedNeighbors) const noexcept;
+    void AdvanceSubstep(std::vector<FluidParticle>& particles, float deltaTime, JobSystem* pJobSystem);
 
 private:
     SPHSettings m_Settings{};

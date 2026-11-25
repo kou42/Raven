@@ -1,8 +1,11 @@
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <vector>
 
+#include "Raven/Core/CPUProfiler.h"
+#include "Raven/Core/Jobs/JobSystem.h"
 #include "Raven/Physics/Coupling/FluidStaticColliderCoupling.h"
 #include "Raven/Physics/Collision/StaticSDFCollider.h"
 #include "Raven/Physics/Field/DenseSDF.h"
@@ -68,6 +71,86 @@ void RunFluidSPHSelfTests()
         // 上限超過の後も、移動済みの粒子から新しいSubstep用の近傍を構築します。
         particles[4].Position.x = 0.03125f;
         checkStep(particles);
+    }
+
+    {
+        SPHSettings settings;
+        settings.SmoothingRadius = 0.125f;
+        settings.StableTimeStepEnabled = false;
+        SPHSolver serialSolver(settings);
+        SPHSolver parallelSolver(settings);
+        JobSystem jobSystem(2u);
+        CPUProfiler& profiler = CPUProfiler::Get();
+
+        const auto readForceCounters = [&]()
+        {
+            std::array<double, 3> counters{-1.0, -1.0, -1.0};
+            for (const CPUProfileCounter& counter : profiler.GetLastFrame().Counters)
+            {
+                if (counter.Name == "Physics.Fluid.SPH.ForceNeighborCandidateCount")
+                {
+                    counters[0] = counter.Value;
+                }
+                if (counter.Name == "Physics.Fluid.SPH.ForceNeighborAcceptedCount")
+                {
+                    counters[1] = counter.Value;
+                }
+                if (counter.Name == "Physics.Fluid.SPH.ForceJobCount")
+                {
+                    counters[2] = counter.Value;
+                }
+            }
+            return counters;
+        };
+
+        const auto checkParallelStep = [&](const std::vector<FluidParticle>& initial,
+            bool expectsCache, double expectedJobCount)
+        {
+            constexpr float deltaTime = 1.0e-4f;
+            auto expected = initial;
+            auto actual = initial;
+            profiler.BeginFrame();
+            serialSolver.Step(expected, deltaTime);
+            profiler.BeginFrame();
+            const auto serialCounters = readForceCounters();
+            parallelSolver.Step(actual, deltaTime, &jobSystem);
+            profiler.BeginFrame();
+            const auto parallelCounters = readForceCounters();
+
+            assert(serialCounters[1] > 0.0);
+            assert((serialCounters[0] == serialCounters[1]) == expectsCache);
+            assert(serialCounters[0] == parallelCounters[0]);
+            assert(serialCounters[1] == parallelCounters[1]);
+            assert(serialCounters[2] == 0.0);
+            assert(parallelCounters[2] == expectedJobCount);
+            for (std::size_t index = 0u; index < initial.size(); ++index)
+            {
+                assert(actual[index].Density == expected[index].Density);
+                assert(actual[index].Pressure == expected[index].Pressure);
+                assert((actual[index].Force - expected[index].Force).LengthSq() == 0.0f);
+                assert((actual[index].Velocity - expected[index].Velocity).LengthSq() == 0.0f);
+                assert((actual[index].Position - expected[index].Position).LengthSq() == 0.0f);
+            }
+        };
+
+        std::vector<FluidParticle> particles(1024);
+        for (std::size_t index = 0u; index < particles.size(); ++index)
+        {
+            particles[index].Position = {
+                static_cast<float>(index % 16u) * 0.0625f,
+                static_cast<float>((index / 16u) % 8u) * 0.0625f,
+                static_cast<float>(index / 128u) * 0.0625f};
+            particles[index].Velocity.y = static_cast<float>(index % 16u) * 0.03125f;
+        }
+        checkParallelStep(std::vector<FluidParticle>(particles.begin(), particles.begin() + 6), true, 0.0);
+        checkParallelStep(particles, true, 1.0);
+
+        // 514個の密集群だけでキャッシュ上限を超え、疎な範囲と混在するケースも照合します。
+        for (std::size_t index = 0u; index < 514u; ++index)
+        {
+            particles[index].Position = {2.0f + static_cast<float>(index) * 0.000125f, 0.0f, 0.0f};
+        }
+        checkParallelStep(particles, false, 1.0);
     }
 
     {
