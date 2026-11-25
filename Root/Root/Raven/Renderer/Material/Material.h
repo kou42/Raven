@@ -1,4 +1,4 @@
-// Material.h
+﻿// Material.h
 #pragma once
 #include <array>
 #include <memory>
@@ -69,7 +69,9 @@ public:
     void BindForSurface() const;
 
     template<class T>
-    void SetUniform(const std::string& name, const T& value) {
+    void SetUniform(const std::string& name, const T& value)
+    {
+
         m_uniforms[name] = value;
 
         // 既存Materialの段階移行用互換処理です。
@@ -80,8 +82,12 @@ public:
         {
             if (m_SurfaceTypeExplicit == false && name == "u_Alpha")
             {
-                const MaterialSurfaceType inferredType =
-                    value < 1.0f ? MaterialSurfaceType::Transparent : MaterialSurfaceType::Opaque;
+                MaterialSurfaceType inferredType = MaterialSurfaceType::Opaque;
+                // α値が1.0より小さいなら透明判定に変更
+                if (value < 1.0f)
+                {
+                    inferredType = MaterialSurfaceType::Transparent;
+                }
 
                 if (m_SurfaceType != inferredType)
                 {
