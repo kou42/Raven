@@ -66,13 +66,14 @@ private:
     {
         uint64_t m_Candidates = 0u;
         uint64_t m_Accepted = 0u;
+        double m_Milliseconds = 0.0;
     };
 
-    bool ComputeDensity(std::vector<FluidParticle>& particles, bool shouldCacheNeighbors);
+    std::size_t ComputeDensity(std::vector<FluidParticle>& particles, bool isSubstep);
     void ComputeForcesUsingCurrentGrid(
-        std::vector<FluidParticle>& particles, bool hasCachedNeighbors, JobSystem* pJobSystem);
+        std::vector<FluidParticle>& particles, std::size_t cachedRowCount, JobSystem* pJobSystem);
     ForceNeighborCounts ComputeForceRange(std::vector<FluidParticle>& particles,
-        std::size_t rangeBegin, std::size_t rangeEnd, bool hasCachedNeighbors) const noexcept;
+        std::size_t rangeBegin, std::size_t rangeEnd, std::size_t cachedRowCount) const noexcept;
     void AdvanceSubstep(std::vector<FluidParticle>& particles, float deltaTime, JobSystem* pJobSystem);
 
 private:
