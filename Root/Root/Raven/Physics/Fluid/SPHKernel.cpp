@@ -49,10 +49,14 @@ math::Vec3 SPHKernel::EvaluateSpikyGradient(
         return math::Vec3{};
     }
 
-    const float hMinusR = m_SmoothingRadius - distance;
-
     // displacement / distance が rHat です。中心r=0では方向が定義できないため上で0を返します。
-    return displacement * (m_SpikyCoefficient * hMinusR * hMinusR / distance);
+    return EvaluateSpikyGradientInSupport(displacement, distance, m_SmoothingRadius - distance);
+}
+
+math::Vec3 SPHKernel::EvaluateSpikyGradientInSupport(
+    const math::Vec3& displacement, float distance, float remainingRadius) const
+{
+    return displacement * (m_SpikyCoefficient * remainingRadius * remainingRadius / distance);
 }
 
 float SPHKernel::EvaluateViscosityLaplacian(float distance) const
@@ -64,7 +68,12 @@ float SPHKernel::EvaluateViscosityLaplacian(float distance) const
         return 0.0f;
     }
 
-    return -m_SpikyCoefficient * (m_SmoothingRadius - distance);
+    return EvaluateViscosityLaplacianInSupport(m_SmoothingRadius - distance);
+}
+
+float SPHKernel::EvaluateViscosityLaplacianInSupport(float remainingRadius) const
+{
+    return -m_SpikyCoefficient * remainingRadius;
 }
 
 float SPHKernel::EvaluatePoly6Density(float distanceSq, float smoothingRadius)
