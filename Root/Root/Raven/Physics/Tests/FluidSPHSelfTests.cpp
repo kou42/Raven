@@ -25,11 +25,11 @@
 namespace Raven::ph::tests
 {
 
-int RunFluidSPHBenchmark(bool compareCache, bool compareDensity)
+int RunFluidSPHBenchmark(bool compareCache, bool compareDensity, bool compareCellSizes)
 {
     constexpr std::size_t workerCount = 4u;
-    const std::size_t warmupSteps = (compareCache || compareDensity) ? 5u : 20u;
-    const std::size_t sampleSteps = (compareCache || compareDensity) ? 20u : 300u;
+    const std::size_t warmupSteps = (compareCache || compareDensity || compareCellSizes) ? 5u : 20u;
+    const std::size_t sampleSteps = (compareCache || compareDensity || compareCellSizes) ? 20u : 300u;
     constexpr float deltaTime = 1.0f / 60.0f;
     constexpr std::string_view prefix = "Physics.Fluid.SPH.";
     JobSystem jobSystem(workerCount);
@@ -45,6 +45,7 @@ int RunFluidSPHBenchmark(bool compareCache, bool compareDensity)
         std::size_t m_Limit;
         bool m_ShouldReuseRows;
         bool m_ShouldUseJobs = true;
+        float m_CellSizeScale = SPHSettings{}.SpatialHashCellSizeScale;
     };
     constexpr std::size_t kilo = 1024u;
     std::vector<CacheConfiguration> configurations = compareCache
@@ -59,22 +60,37 @@ int RunFluidSPHBenchmark(bool compareCache, bool compareDensity)
         configurations.insert(configurations.begin(), {SPHSettings{}.MaximumCachedNeighbors,
             SPHSettings{}.ReuseCompletedNeighborRowsOnOverflow, false});
     }
+    if (compareCellSizes == true)
+    {
+        configurations.clear();
+        constexpr std::array cellSizeScales{1.0f, 0.8f, 0.6f, 0.5f, 0.4f};
+        for (float cellSizeScale : cellSizeScales)
+        {
+            configurations.push_back({SPHSettings{}.MaximumCachedNeighbors,
+                SPHSettings{}.ReuseCompletedNeighborRowsOnOverflow, true, cellSizeScale});
+        }
+    }
     struct ParticleConfiguration
     {
         std::size_t m_Count;
         float m_Spacing;
     };
-    const std::vector<ParticleConfiguration> layouts = (compareCache || compareDensity)
+    std::vector<ParticleConfiguration> layouts = (compareCache || compareDensity)
         ? std::vector<ParticleConfiguration>{{1024u, 0.065f}, {5120u, 0.025f}, {10240u, 0.025f}}
         : std::vector<ParticleConfiguration>{
             {1024u, 0.065f}, {1024u, 0.025f}, {5120u, 0.065f},
             {5120u, 0.025f}, {10240u, 0.065f}, {10240u, 0.025f}};
+    if (compareCellSizes == true)
+    {
+        layouts = {{1024u, 0.065f}, {5120u, 0.025f}, {10240u, 0.065f}};
+    }
     for (const auto& [particleCount, spacing] : layouts)
     {
-        for (const auto& [cacheLimit, shouldReuseRows, shouldUseJobs] : configurations)
+        for (const auto& [cacheLimit, shouldReuseRows, shouldUseJobs, cellSizeScale] : configurations)
         {
             SPHSettings settings;
             settings.MaximumCachedNeighbors = cacheLimit;
+            settings.SpatialHashCellSizeScale = cellSizeScale;
             settings.ReuseCompletedNeighborRowsOnOverflow = shouldReuseRows;
             settings.BoundaryEnabled = true;
             settings.BoundaryMaximum = {3.0f, 3.0f, 3.0f};
@@ -150,6 +166,7 @@ int RunFluidSPHBenchmark(bool compareCache, bool compareDensity)
                 + stepMilliseconds[sampleSteps / 2u]) * 0.5;
             std::cout << "particles=" << particleCount << ",spacing=" << spacing
                 << ",workers=" << (shouldUseJobs ? workerCount : 0u)
+                << ",cell_size_scale=" << cellSizeScale
                 << ",cache_limit=" << cacheLimit << ",reuse_rows=" << shouldReuseRows
                 << ",step_median_ms=" << median
                 << ",step_p95_ms=" << stepMilliseconds[sampleSteps * 95u / 100u - 1u]
@@ -487,7 +504,7 @@ void RunFluidSPHSelfTests()
         particles[4].Position = { 0.5f, 0.5f, 0.0f };
         particles[5].Position = { 1.5f, 0.0f, 0.0f };
         constexpr float radius = 1.0f;
-        constexpr float cellSizes[] = { 1.0f, 0.5f, 0.25f };
+        constexpr float cellSizes[] = { 1.0f, 0.8f, 0.6f, 0.5f, 0.4f, 0.25f };
         for (float cellSize : cellSizes)
         {
             FluidSpatialHashGrid grid(cellSize);
@@ -572,48 +589,57 @@ void RunFluidSPHSelfTests()
         assert(std::abs(particles[0].Density - expected) <= 1.0e-5f);
     }
 
-    // Spatial Hash CellSizeはBroad Phase最適化パラメータです。
-    // hを固定したままCellSizeを0.75h / 1.0h / 1.25hへ変更しても、
-    // 厳密なsupport radius判定後のDensityは一致しなければなりません。
+    // 探索順が変わるため丸め差を許容しつつ、CellSize変更で物理状態が変わらないことを確認します。
     {
-        std::vector<FluidParticle> sourceParticles(4u);
-        sourceParticles[0].Position = { 0.0f, 0.0f, 0.0f };
-        sourceParticles[1].Position = { 0.45f, 0.0f, 0.0f };
-        sourceParticles[2].Position = { 0.95f, 0.0f, 0.0f };
-        sourceParticles[3].Position = { 1.25f, 0.0f, 0.0f };
-        sourceParticles[0].Mass = 1.0f;
-        sourceParticles[1].Mass = 2.0f;
-        sourceParticles[2].Mass = 3.0f;
-        sourceParticles[3].Mass = 4.0f;
+        std::vector<FluidParticle> sourceParticles(6u);
+        sourceParticles[0].Position = { -1.0f, 0.0f, 0.0f };
+        sourceParticles[1].Position = { -0.5f, -0.4f, 0.0f };
+        sourceParticles[2].Position = { -0.25f, 0.3f, -0.5f };
+        sourceParticles[3].Position = { 0.0f, 0.0f, 0.0f };
+        sourceParticles[4].Position = { 0.4f, 0.6f, 0.2f };
+        sourceParticles[5].Position = { 0.8f, 0.0f, 0.5f };
+        for (std::size_t index = 0u; index < sourceParticles.size(); ++index)
+        {
+            sourceParticles[index].Mass = static_cast<float>(index + 1u) * 0.25f;
+            sourceParticles[index].Velocity.y = static_cast<float>(index) * 0.125f;
+        }
 
-        const float cellSizeScales[] = { 0.75f, 1.0f, 1.25f };
-        std::vector<float> referenceDensities;
+        constexpr float dt = 1.0e-3f;
+        SPHSettings settings{};
+        settings.SmoothingRadius = 1.0f;
+        settings.RestDensity = 2.0f;
+        settings.StableTimeStepEnabled = false;
+        SPHSolver reference(settings);
+        auto expected = sourceParticles;
+        reference.ComputeDensityAndPressure(expected);
+        reference.ComputeForces(expected);
+        reference.Integrate(expected, dt);
+        reference.ResolveBoundary(expected);
 
+        const auto isNear = [](float actual, float expectedValue)
+        {
+            return std::abs(actual - expectedValue) <= 1.0e-5f * std::max(1.0f, std::abs(expectedValue));
+        };
+        const auto isVectorNear = [&](const math::Vec3& actual, const math::Vec3& expectedValue)
+        {
+            return isNear(actual.x, expectedValue.x)
+                && isNear(actual.y, expectedValue.y) && isNear(actual.z, expectedValue.z);
+        };
+
+        constexpr float cellSizeScales[] = { 1.0f, 0.8f, 0.75f, 0.6f, 0.5f, 0.4f, 1.25f };
         for (float cellSizeScale : cellSizeScales)
         {
-            SPHSettings settings{};
-            settings.SmoothingRadius = 1.0f;
             settings.SpatialHashCellSizeScale = cellSizeScale;
-            settings.PressureStiffness = 0.0f;
-
             SPHSolver solver(settings);
-            std::vector<FluidParticle> particles = sourceParticles;
-            solver.ComputeDensity(particles);
-
-            if (referenceDensities.empty())
+            auto particles = sourceParticles;
+            solver.Step(particles, dt);
+            for (std::size_t index = 0u; index < particles.size(); ++index)
             {
-                referenceDensities.reserve(particles.size());
-                for (const FluidParticle& particle : particles)
-                {
-                    referenceDensities.push_back(particle.Density);
-                }
-                continue;
-            }
-
-            assert(referenceDensities.size() == particles.size());
-            for (std::size_t i = 0u; i < particles.size(); ++i)
-            {
-                assert(std::abs(particles[i].Density - referenceDensities[i]) <= 1.0e-5f);
+                assert(isNear(particles[index].Density, expected[index].Density));
+                assert(isNear(particles[index].Pressure, expected[index].Pressure));
+                assert(isVectorNear(particles[index].Force, expected[index].Force));
+                assert(isVectorNear(particles[index].Velocity, expected[index].Velocity));
+                assert(isVectorNear(particles[index].Position, expected[index].Position));
             }
         }
     }
