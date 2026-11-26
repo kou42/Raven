@@ -137,13 +137,13 @@ Debug／Release ビルドと Debug の `--test-fluid-sph` に成功しました�
 
 対象: `SPHSolver.cpp/.h`。
 
-- [ ] `ComputeDensityRange()` を追加し、粒子範囲ごとに独立して処理する。
-- [ ] Grid Build / PrepareNeighborBuckets を先に完了し、探索が読み取り専用であることを Core 実装で確認する。
-- [ ] Job ごとに永続的な Neighbor Buffer、Offsets、Counter を持たせる。
-- [ ] キャッシュ総メモリ予算を Job 間で配分し、超過時も密度・力の計算を欠落させない。
-- [ ] Density 完了 Barrier の後に Force を開始する。Force 完了後に積分する。
-- [ ] JobSystem が null の場合、小規模粒子数、Job 投入失敗時の直列経路を維持する。
-- [ ] 公開 ComputeDensity / ComputeForces の既存動作を維持する。
+- [x] `ComputeDensityRange()` を追加し、粒子範囲ごとに独立して処理する。
+- [x] Grid Build / PrepareNeighborBuckets を先に完了し、探索が読み取り専用であることを Core 実装で確認する。
+- [x] Job ごとに永続的な Neighbor Buffer、Offsets、Counter を持たせる。
+- [x] キャッシュ総メモリ予算を Job 間で配分し、超過時も密度・力の計算を欠落させない。
+- [x] Density 完了 Barrier の後に Force を開始する。Force 完了後に積分する。
+- [x] JobSystem が null の場合、小規模粒子数、Job 投入失敗時の直列経路を維持する。
+- [x] 公開 ComputeDensity / ComputeForces の既存動作を維持する。
 
 ```cpp
 struct DensityJobBuffer
@@ -158,6 +158,30 @@ struct DensityJobBuffer
 ```
 
 共有 vector への並列 push_back は避ける。Force 側は Job 別バッファを直接参照する方式を優先し、不要な全件コピーを避ける。
+
+
+### Phase 3 の実測と動作
+
+Grid Build と Bucket 準備を終えてから粒子の連続範囲を配分します。Grid の候補探索は読み取り専用で、各範囲は担当粒子の Density と専用バッファを書き込みます。範囲ごとの集計とバッファの公開は全 Job の完了後に行い、Pressure、Force、積分の順に進みます。Force はバッファを直接参照します。
+
+呼び出し元も1範囲を担当し、JobSystem が未指定か1,024粒子未満なら直列です。投入に失敗した場合、未投入の範囲を呼び出し元が処理します。処理中に例外が発生した場合は、投入済みの全 Job を待ってから例外を伝播します。公開 `ComputeDensity` と `ComputeForces` の単独呼び出しは直列です。
+
+キャッシュ上限は各範囲へ等分し、余りは先頭から1件ずつ配分します。全体フォールバックと完成行再利用は Phase 2 の設定を引き継ぎます。範囲ごとの上限があるため、全体に空きがあっても密度の高い範囲は超過することがあります。`NeighborCacheOverflow` は超過のあった Substep を、`NeighborCacheOverflowedRangeCount` はその中で超過した範囲数を記録します。
+
+`Root.exe --benchmark-fluid-sph-density` を Windows x64 Release、Intel Core i9-10900K で実行しました。各条件で粒子の初期状態を毎 Step 復元し、固定 dt は1/60秒、5回ウォームアップ後に20 Step計測しました。キャッシュ上限は256K件です。並列測定では Density と Force の両方に同じ Pool を使用します。
+
+| 粒子・配置 | Worker 上限 | Density Job数 / Substep | Substep数 | Density 平均 ms | Force 平均 ms | Step 中央値 ms | p95 ms |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 1,024 均一 | 0 | 0 | 7 | 4.16 | 1.12 | 5.36 | 5.54 |
+| 1,024 均一 | 4 | 1 | 7 | 3.59 | 0.89 | 4.58 | 4.62 |
+| 5,120 密集 | 0 | 0 | 15 | 407.87 | 481.65 | 889.74 | 895.28 |
+| 5,120 密集 | 4 | 4 | 15 | 104.80 | 117.10 | 222.41 | 223.87 |
+| 10,240 密集 | 0 | 0 | 16 | 951.74 | 1,127.47 | 2,079.39 | 2,095.45 |
+| 10,240 密集 | 4 | 4 | 16 | 231.31 | 262.03 | 494.81 | 498.70 |
+
+同じ4 Workerの Phase 2 記録と比較すると、Step中央値は5,120粒子の密集で535.26 msから222.41 ms、10,240粒子の密集で1,260.88 msから494.81 msでした。Phase 2 の値は別セッションで、Force は当時も並列でした。密集の2条件は今回も全 Substep でキャッシュが超過しました。
+
+Debug／Release ビルドと Debug の `--test-fluid-sph` に成功しました。通常、密集、キャッシュ超過時の全体／部分フォールバック、キャッシュ無効、粒子数の増減で、直列と並列の結果を照合しました。Job投入失敗は静的に確認し、故障注入とデータ競合検出ツールによる検証は未実施です。
 
 ## Phase 4 — Particle Pass 統合
 

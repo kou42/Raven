@@ -1,7 +1,9 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "Raven/Physics/Fluid/FluidParticle.h"
@@ -69,11 +71,28 @@ private:
         double m_Milliseconds = 0.0;
     };
 
-    std::size_t ComputeDensity(std::vector<FluidParticle>& particles, bool isSubstep);
-    void ComputeForcesUsingCurrentGrid(
-        std::vector<FluidParticle>& particles, std::size_t cachedRowCount, JobSystem* pJobSystem);
+    struct DensityJobBuffer
+    {
+        std::vector<CachedNeighbor> m_Neighbors;
+        std::vector<std::size_t> m_Offsets;
+        std::size_t m_RangeBegin = 0u;
+        std::size_t m_RangeEnd = 0u;
+        std::size_t m_CacheLimit = 0u;
+        std::size_t m_CachedRowCount = 0u;
+        uint64_t m_Candidates = 0u;
+        uint64_t m_Accepted = 0u;
+        bool m_HasOverflowed = false;
+    };
+
+    static constexpr std::size_t MaximumWorkerJobs = 7u;
+    std::span<const DensityJobBuffer> ComputeDensity(
+        std::vector<FluidParticle>& particles, bool isSubstep, JobSystem* pJobSystem);
+    void ComputeDensityRange(std::vector<FluidParticle>& particles, DensityJobBuffer& buffer) const;
+    void ComputeForcesUsingCurrentGrid(std::vector<FluidParticle>& particles,
+        std::span<const DensityJobBuffer> cachedRanges, JobSystem* pJobSystem);
     ForceNeighborCounts ComputeForceRange(std::vector<FluidParticle>& particles,
-        std::size_t rangeBegin, std::size_t rangeEnd, std::size_t cachedRowCount) const noexcept;
+        std::size_t rangeBegin, std::size_t rangeEnd,
+        std::span<const DensityJobBuffer> cachedRanges) const noexcept;
     void AdvanceSubstep(std::vector<FluidParticle>& particles, float deltaTime, JobSystem* pJobSystem);
 
 private:
@@ -81,8 +100,7 @@ private:
     SPHKernel m_Kernel{m_Settings.SmoothingRadius};
     FluidSpatialHashGrid m_SpatialHash;
     // 各行の近傍はGridの走査順を維持し、位置を更新する前のForce計算だけで使用します。
-    std::vector<CachedNeighbor> m_CachedNeighbors;
-    std::vector<std::size_t> m_CachedNeighborOffsets;
+    std::array<DensityJobBuffer, MaximumWorkerJobs + 1u> m_DensityBuffers;
     std::vector<NeighborForceTerms> m_NeighborForceTerms;
     uint32_t m_LastSubstepCount = 0u;
     float m_LastMinimumSubstepDeltaTime = 0.0f;
