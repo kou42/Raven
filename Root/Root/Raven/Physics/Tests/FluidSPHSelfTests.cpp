@@ -761,6 +761,94 @@ void RunFluidSPHSelfTests()
         assert(solver.WasLastSubstepLimitReached());
     }
 
+    // 統合された粒子走査を、公開APIで各処理を分けた参照手順と比較します。
+    {
+        SPHSettings settings{};
+        settings.BoundaryEnabled = true;
+        settings.BoundaryRestitution = 0.25f;
+        settings.SmoothingRadius = 0.2f;
+        settings.MaximumSubsteps = 4u;
+        SPHSolver solver(settings);
+        SPHSolver reference(settings);
+        JobSystem jobs(2u);
+        std::vector<FluidParticle> actual(1024u);
+        for (std::size_t index = 0u; index < actual.size(); ++index)
+        {
+            actual[index].Position = {
+                static_cast<float>(index % 16u) * 0.0625f - 0.5f,
+                static_cast<float>((index / 16u) % 8u) * 0.0625f,
+                static_cast<float>(index / 128u) * 0.0625f};
+            actual[index].Mass = 0.1f;
+        }
+        actual[0].Mass = 0.0f;
+        actual[0].Position.x = 1.2f;
+        actual[0].Velocity.x = 20.0f;
+        auto expected = actual;
+
+        for (const float deltaTime : {5.0e-3f, 3.0e-2f})
+        {
+            float remainingTime = deltaTime;
+            float minimumDt = deltaTime;
+            uint32_t substeps = 0u;
+            bool hasReachedLimit = false;
+            while (remainingTime > math::Epsilon && substeps < settings.MaximumSubsteps)
+            {
+                float dt = reference.ComputeStableTimeStep(expected, remainingTime);
+                if (substeps + 1u == settings.MaximumSubsteps && dt + math::Epsilon < remainingTime)
+                {
+                    dt = remainingTime;
+                    hasReachedLimit = true;
+                }
+                reference.ComputeDensityAndPressure(expected);
+                reference.ComputeForces(expected);
+                reference.Integrate(expected, dt);
+                reference.ResolveBoundary(expected);
+                remainingTime -= dt;
+                minimumDt = std::min(minimumDt, dt);
+                ++substeps;
+            }
+
+            solver.Step(actual, deltaTime, &jobs);
+            assert(solver.GetLastSubstepCount() == substeps);
+            assert(solver.GetLastMinimumSubstepDeltaTime() == minimumDt);
+            assert(solver.WasLastSubstepLimitReached() == hasReachedLimit);
+            assert(actual[0].Position.x == 1.0f - settings.BoundaryParticleRadius);
+            for (std::size_t index = 0u; index < actual.size(); ++index)
+            {
+                assert(actual[index].Density == expected[index].Density);
+                assert(actual[index].Pressure == expected[index].Pressure);
+                assert((actual[index].Force - expected[index].Force).LengthSq() == 0.0f);
+                assert((actual[index].Position - expected[index].Position).LengthSq() == 0.0f);
+                assert((actual[index].Velocity - expected[index].Velocity).LengthSq() == 0.0f);
+            }
+
+            // 次のStep開始時は外部から加えられた速度変更をCFLへ反映します。
+            actual[0].Velocity.y = 100.0f;
+            expected[0].Velocity.y = 100.0f;
+        }
+    }
+
+    {
+        SPHSettings settings{};
+        settings.SmoothingRadius = 1.0f;
+        settings.PressureStiffness = 0.0f;
+        settings.MinimumTimeStep = 0.0f;
+        settings.CFLFactor = 0.5f;
+        settings.AccelerationTimeStepFactor = 0.25f;
+        SPHSolver solver(settings);
+        std::vector<FluidParticle> particles(2u);
+        particles[0].Velocity = {3.0e20f, 4.0e20f, 0.0f};
+        assert(std::abs(solver.ComputeStableTimeStep(particles, 1.0f) / 1.0e-21f - 1.0f) < 1.0e-6f);
+        particles[0].Velocity = {};
+        particles[0].Force = {3.0e20f, 4.0e20f, 0.0f};
+        particles[0].Mass = 1.0e20f;
+        particles[1].Force = {8.0f, 0.0f, 0.0f};
+        particles[1].Mass = 0.5f;
+        assert(std::abs(solver.ComputeStableTimeStep(particles, 1.0f) - 0.0625f) < 1.0e-6f);
+        particles.resize(1u);
+        assert(std::abs(solver.ComputeStableTimeStep(particles, 1.0f) - 0.25f / std::sqrt(5.0f)) < 1.0e-6f);
+    }
+
     // Fluid Particle <-> Sphere Static Collider:
     // Particle半径を含む表面まで押し出し、内向き速度だけを反発させます。
     {
