@@ -25,11 +25,11 @@
 namespace Raven::ph::tests
 {
 
-int RunFluidSPHBenchmark(bool compareCache, bool compareDensity, bool compareCellSizes)
+int RunFluidSPHBenchmark(bool compareCache, bool compareDensity, bool compareCellSizes, bool compareVerlet)
 {
     constexpr std::size_t workerCount = 4u;
-    const std::size_t warmupSteps = (compareCache || compareDensity || compareCellSizes) ? 5u : 20u;
-    const std::size_t sampleSteps = (compareCache || compareDensity || compareCellSizes) ? 20u : 300u;
+    const std::size_t warmupSteps = (compareCache || compareDensity || compareCellSizes || compareVerlet) ? 5u : 20u;
+    const std::size_t sampleSteps = (compareCache || compareDensity || compareCellSizes || compareVerlet) ? 20u : 300u;
     constexpr float deltaTime = 1.0f / 60.0f;
     constexpr std::string_view prefix = "Physics.Fluid.SPH.";
     JobSystem jobSystem(workerCount);
@@ -46,6 +46,7 @@ int RunFluidSPHBenchmark(bool compareCache, bool compareDensity, bool compareCel
         bool m_ShouldReuseRows;
         bool m_ShouldUseJobs = true;
         float m_CellSizeScale = SPHSettings{}.SpatialHashCellSizeScale;
+        float m_VerletSkinScale = 0.0f;
     };
     constexpr std::size_t kilo = 1024u;
     std::vector<CacheConfiguration> configurations = compareCache
@@ -70,28 +71,54 @@ int RunFluidSPHBenchmark(bool compareCache, bool compareDensity, bool compareCel
                 SPHSettings{}.ReuseCompletedNeighborRowsOnOverflow, true, cellSizeScale});
         }
     }
+    if (compareVerlet == true)
+    {
+        configurations.clear();
+        for (const std::size_t limit : {SPHSettings{}.MaximumCachedNeighbors, 2u * kilo * kilo})
+        {
+            for (const float skinScale : {0.0f, 0.1f, 0.2f, 0.3f})
+            {
+                configurations.push_back({limit, false, true, SPHSettings{}.SpatialHashCellSizeScale, skinScale});
+            }
+        }
+    }
     struct ParticleConfiguration
     {
         std::size_t m_Count;
         float m_Spacing;
+        bool m_IsStationary = false;
     };
     std::vector<ParticleConfiguration> layouts = (compareCache || compareDensity)
         ? std::vector<ParticleConfiguration>{{1024u, 0.065f}, {5120u, 0.025f}, {10240u, 0.025f}}
         : std::vector<ParticleConfiguration>{
             {1024u, 0.065f}, {1024u, 0.025f}, {5120u, 0.065f},
             {5120u, 0.025f}, {10240u, 0.065f}, {10240u, 0.025f}};
-    if (compareCellSizes == true)
+    if (compareCellSizes || compareVerlet)
     {
         layouts = {{1024u, 0.065f}, {5120u, 0.025f}, {10240u, 0.065f}};
     }
-    for (const auto& [particleCount, spacing] : layouts)
+    if (compareVerlet == true)
     {
-        for (const auto& [cacheLimit, shouldReuseRows, shouldUseJobs, cellSizeScale] : configurations)
+        // hより広い間隔で外力もないため、CFLのSubstepを進めても位置は変化しません。
+        layouts.push_back({10240u, 0.12f, true});
+    }
+    for (const auto& [particleCount, spacing, isStationary] : layouts)
+    {
+        for (const auto& [cacheLimit, shouldReuseRows, shouldUseJobs, cellSizeScale, verletSkinScale] : configurations)
         {
+            if (compareVerlet && spacing > 0.025f && cacheLimit != SPHSettings{}.MaximumCachedNeighbors)
+            {
+                continue;
+            }
             SPHSettings settings;
             settings.MaximumCachedNeighbors = cacheLimit;
+            settings.VerletSkinScale = verletSkinScale;
             settings.SpatialHashCellSizeScale = cellSizeScale;
             settings.ReuseCompletedNeighborRowsOnOverflow = shouldReuseRows;
+            if (isStationary == true)
+            {
+                settings.Gravity = {};
+            }
             settings.BoundaryEnabled = true;
             settings.BoundaryMaximum = {3.0f, 3.0f, 3.0f};
             SPHSolver solver(settings);
@@ -165,8 +192,10 @@ int RunFluidSPHBenchmark(bool compareCache, bool compareDensity, bool compareCel
             const double median = (stepMilliseconds[sampleSteps / 2u - 1u]
                 + stepMilliseconds[sampleSteps / 2u]) * 0.5;
             std::cout << "particles=" << particleCount << ",spacing=" << spacing
+                << ",stationary=" << isStationary
                 << ",workers=" << (shouldUseJobs ? workerCount : 0u)
                 << ",cell_size_scale=" << cellSizeScale
+                << ",verlet_skin_scale=" << verletSkinScale
                 << ",cache_limit=" << cacheLimit << ",reuse_rows=" << shouldReuseRows
                 << ",step_median_ms=" << median
                 << ",step_p95_ms=" << stepMilliseconds[sampleSteps * 95u / 100u - 1u]
@@ -873,6 +902,114 @@ void RunFluidSPHSelfTests()
         assert(std::abs(solver.ComputeStableTimeStep(particles, 1.0f) - 0.0625f) < 1.0e-6f);
         particles.resize(1u);
         assert(std::abs(solver.ComputeStableTimeStep(particles, 1.0f) - 0.25f / std::sqrt(5.0f)) < 1.0e-6f);
+    }
+
+    // 拡張半径に保存した粒子が、再利用時にh内へ移動しても近傍から漏れません。
+    {
+        SPHSettings settings{};
+        settings.SmoothingRadius = 1.0f;
+        settings.RestDensity = 0.5f;
+        settings.PressureStiffness = 1.0f;
+        settings.CFLFactor = 0.125f;
+        settings.AccelerationTimeStepFactor = 0.0f;
+        settings.MinimumTimeStep = 0.0f;
+        settings.Gravity = {};
+        SPHSolver reference(settings);
+        settings.VerletSkinScale = 0.25f;
+        SPHSolver solver(settings);
+        CPUProfiler& profiler = CPUProfiler::Get();
+        JobSystem jobSystem(2u);
+        const auto checkStep = [&](std::vector<FluidParticle> initial, double rebuilds, double reuses,
+            double overflows, JobSystem* pJobs = nullptr)
+        {
+            auto expected = initial;
+            reference.Step(expected, 0.25f, pJobs);
+            profiler.BeginFrame();
+            solver.Step(initial, 0.25f, pJobs);
+            profiler.BeginFrame();
+            const auto sumCounter = [&](std::string_view name)
+            {
+                double total = 0.0;
+                for (const auto& counter : profiler.GetLastFrame().Counters)
+                {
+                    if (counter.Name == name)
+                    {
+                        total += counter.Value;
+                    }
+                }
+                return total;
+            };
+            assert(sumCounter("Physics.Fluid.SPH.VerletRebuildCount") == rebuilds);
+            assert(sumCounter("Physics.Fluid.SPH.VerletReuseCount") == reuses);
+            assert(sumCounter("Physics.Fluid.SPH.VerletOverflowCount") == overflows);
+            assert(sumCounter("Physics.Fluid.SPH.SpatialHashOccupiedCellCount") > 0.0);
+            assert(solver.GetLastSubstepCount() == reference.GetLastSubstepCount());
+            assert(solver.GetLastMinimumSubstepDeltaTime() == reference.GetLastMinimumSubstepDeltaTime());
+            assert(solver.WasLastSubstepLimitReached() == reference.WasLastSubstepLimitReached());
+            for (std::size_t index = 0u; index < initial.size(); ++index)
+            {
+                assert(std::abs(initial[index].Density - expected[index].Density) <= 1.0e-6f);
+                assert(std::abs(initial[index].Pressure - expected[index].Pressure) <= 1.0e-6f);
+                assert((initial[index].Force - expected[index].Force).LengthSq() <= 1.0e-10f);
+                assert((initial[index].Position - expected[index].Position).LengthSq() <= 1.0e-10f);
+                assert((initial[index].Velocity - expected[index].Velocity).LengthSq() <= 1.0e-10f);
+            }
+            return initial;
+        };
+
+        std::vector<FluidParticle> particles(2u);
+        particles[1].Position.x = 1.0625f;
+        particles[1].Velocity.x = -0.75f;
+        auto actual = checkStep(particles, 1.0, 1.0, 0.0);
+        assert(actual[0].Force.LengthSq() > 0.0f);
+        particles[1].Velocity.x = -1.0f;
+        checkStep(particles, 2.0, 0.0, 0.0);
+
+        // 同じSolverの前Stepの粒子インデックスを持ち越さないことを確認します。
+        particles[1].Velocity.x = -0.75f;
+        std::reverse(particles.begin(), particles.end());
+        particles.emplace_back();
+        particles.back().Position.x = -4.0f;
+        checkStep(particles, 1.0, 1.0, 0.0);
+        particles.pop_back();
+        checkStep(particles, 1.0, 1.0, 0.0);
+
+        settings.BoundaryEnabled = true;
+        settings.BoundaryRestitution = 0.5f;
+        solver.SetSettings(settings);
+        auto referenceSettings = settings;
+        referenceSettings.VerletSkinScale = 0.0f;
+        reference.SetSettings(referenceSettings);
+        particles[0].Position = {1.5f, 0.0f, 0.0f};
+        particles[0].Velocity = {1.0f, 0.0f, 0.0f};
+        checkStep(particles, 2.0, 0.0, 0.0);
+
+        settings = referenceSettings;
+        settings.BoundaryEnabled = false;
+        settings.MaximumCachedNeighbors = 2u;
+        reference.SetSettings(settings);
+        settings.VerletSkinScale = 0.25f;
+        solver.SetSettings(settings);
+        // 自分を含む2件では全行を収容できず、拡張リストを破棄します。
+        std::reverse(particles.begin(), particles.end());
+        particles[1].Position.x = 1.0625f;
+        particles[1].Velocity.x = -0.75f;
+        checkStep(particles, 1.0, 0.0, 1.0);
+
+        settings.MaximumCachedNeighbors = 256u * 1024u;
+        referenceSettings = settings;
+        referenceSettings.VerletSkinScale = 0.0f;
+        reference.SetSettings(referenceSettings);
+        solver.SetSettings(settings);
+        particles.assign(1024u, {});
+        for (std::size_t index = 0u; index < particles.size(); ++index)
+        {
+            particles[index].Position = {
+                2.0f * static_cast<float>(index % 16u),
+                2.0f * static_cast<float>((index / 16u) % 8u),
+                2.0f * static_cast<float>(index / 128u)};
+        }
+        checkStep(particles, 1.0, 1.0, 0.0, &jobSystem);
     }
 
     // Fluid Particle <-> Sphere Static Collider:

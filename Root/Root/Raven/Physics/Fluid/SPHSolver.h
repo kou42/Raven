@@ -82,6 +82,21 @@ private:
         uint64_t m_Candidates = 0u;
         uint64_t m_Accepted = 0u;
         bool m_HasOverflowed = false;
+        bool m_IsVerlet = false;
+    };
+
+    enum class NeighborSearch
+    {
+        Grid,
+        BuildVerlet,
+        ReuseVerlet
+    };
+
+    struct VerletStepState
+    {
+        float m_SearchRadius = 0.0f;
+        double m_MaximumDisplacementSquared = 0.0;
+        bool m_HasValidList = false;
     };
 
     struct ParticleStatistics
@@ -100,9 +115,10 @@ private:
 
     static constexpr std::size_t MaximumWorkerJobs = 7u;
     std::span<const DensityJobBuffer> ComputeDensity(
-        std::vector<FluidParticle>& particles, bool isSubstep, JobSystem* pJobSystem);
+        std::vector<FluidParticle>& particles, bool isSubstep, JobSystem* pJobSystem,
+        VerletStepState* pVerlet = nullptr);
     void ComputeDensityRange(std::vector<FluidParticle>& particles, DensityJobBuffer& buffer,
-        std::span<NeighborForceTerms> forceTerms) const;
+        std::span<NeighborForceTerms> forceTerms, NeighborSearch search, float searchRadius) const;
     void ComputeForcesUsingCurrentGrid(std::vector<FluidParticle>& particles,
         std::span<const DensityJobBuffer> cachedRanges, JobSystem* pJobSystem);
     ForceNeighborCounts ComputeForceRange(std::vector<FluidParticle>& particles,
@@ -112,7 +128,9 @@ private:
     NeighborForceTerms EvaluateNeighborForceTerms(const FluidParticle& particle, bool hasViscosity) const;
     ParticleStatistics ScanParticleStatistics(const std::vector<FluidParticle>& particles) const;
     float ComputeStableTimeStep(const ParticleStatistics& statistics, float maximumDeltaTime) const;
-    ParticleStatistics AdvanceSubstep(std::vector<FluidParticle>& particles, float deltaTime, JobSystem* pJobSystem);
+    bool CanReuseVerletList(const std::vector<FluidParticle>& particles, const VerletStepState& verlet) const;
+    ParticleStatistics AdvanceSubstep(std::vector<FluidParticle>& particles, float deltaTime,
+        JobSystem* pJobSystem, VerletStepState* pVerlet = nullptr);
 
 private:
     SPHSettings m_Settings{};
@@ -121,6 +139,8 @@ private:
     // 各行の近傍はGridの走査順を維持し、位置を更新する前のForce計算だけで使用します。
     std::array<DensityJobBuffer, MaximumWorkerJobs + 1u> m_DensityBuffers;
     std::vector<NeighborForceTerms> m_NeighborForceTerms;
+    // 容量は再利用しますが、有効性はStepローカルなVerletStepStateだけで管理します。
+    std::vector<math::Vec3> m_VerletReferencePositions;
     uint32_t m_LastSubstepCount = 0u;
     float m_LastMinimumSubstepDeltaTime = 0.0f;
     bool m_LastSubstepLimitReached = false;

@@ -148,6 +148,13 @@ void SPHSolver::SetSettings(const SPHSettings& settings)
     m_Settings.SpatialHashCellSizeScale = std::max(
         settings.SpatialHashCellSizeScale,
         MinimumSpatialHashCellSizeScale);
+    m_Settings.VerletSkinScale = std::isfinite(settings.VerletSkinScale)
+        ? std::clamp(settings.VerletSkinScale, 0.0f, 1.0f)
+        : 0.0f;
+    if (m_Settings.VerletSkinScale == 0.0f || m_Settings.MaximumCachedNeighbors == 0u)
+    {
+        std::vector<math::Vec3>().swap(m_VerletReferencePositions);
+    }
     m_Settings.RestDensity = std::max(0.0f, settings.RestDensity);
     m_Settings.PressureStiffness = std::max(0.0f, settings.PressureStiffness);
     m_Settings.Viscosity = std::max(0.0f, settings.Viscosity);
@@ -181,15 +188,26 @@ void SPHSolver::ComputeDensity(std::vector<FluidParticle>& particles)
 }
 
 std::span<const SPHSolver::DensityJobBuffer> SPHSolver::ComputeDensity(
-    std::vector<FluidParticle>& particles, bool isSubstep, JobSystem* pJobSystem)
+    std::vector<FluidParticle>& particles, bool isSubstep, JobSystem* pJobSystem, VerletStepState* pVerlet)
 {
     Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.Density", Diagnostics::DiagnosticCategory::Physics);
-    m_SpatialHash.Build(particles);
-    if (isSubstep == true)
+    const float h = m_Settings.SmoothingRadius;
+    NeighborSearch search = NeighborSearch::Grid;
+    float searchRadius = h;
+    if (pVerlet != nullptr && pVerlet->m_SearchRadius > h)
     {
-        // 診断TraceはGrid側で発行し、ここではCPUProfiler用の区間だけを追加します。
-        CPUProfileScope bucketProfile("Physics.Fluid.SPH.PrepareNeighborBuckets");
-        m_SpatialHash.PrepareNeighborBuckets(m_Settings.SmoothingRadius);
+        search = CanReuseVerletList(particles, *pVerlet) ? NeighborSearch::ReuseVerlet : NeighborSearch::BuildVerlet;
+        searchRadius = pVerlet->m_SearchRadius;
+    }
+    if (search != NeighborSearch::ReuseVerlet)
+    {
+        m_SpatialHash.Build(particles);
+        if (isSubstep == true)
+        {
+            // 診断TraceはGrid側で発行し、ここではCPUProfiler用の区間だけを追加します。
+            CPUProfileScope bucketProfile("Physics.Fluid.SPH.PrepareNeighborBuckets");
+            m_SpatialHash.PrepareNeighborBuckets(searchRadius);
+        }
     }
 
     std::span<NeighborForceTerms> forceTerms;
@@ -213,7 +231,7 @@ std::span<const SPHSolver::DensityJobBuffer> SPHSolver::ComputeDensity(
         : std::span<DensityJobBuffer>(&standaloneBuffer, 1u);
     const std::size_t rangeSize = particles.size() / rangeCount;
     const std::size_t cacheLimit = isSubstep ? m_Settings.MaximumCachedNeighbors : 0u;
-    for (std::size_t index = 0u; index < rangeCount; ++index)
+    for (std::size_t index = 0u; search != NeighborSearch::ReuseVerlet && index < rangeCount; ++index)
     {
         DensityJobBuffer& buffer = ranges[index];
         buffer.m_RangeBegin = index * rangeSize;
@@ -260,9 +278,9 @@ std::span<const SPHSolver::DensityJobBuffer> SPHSolver::ComputeDensity(
             {
                 // 位置・Mass・Gridは全Jobで読み取り専用です。各Jobは別々のDensityとBufferを書き込みます。
                 DensityJobBuffer& buffer = ranges[jobCount];
-                jobs[jobCount] = pJobSystem->Submit([this, &particles, &buffer, forceTerms]()
+                jobs[jobCount] = pJobSystem->Submit([this, &particles, &buffer, forceTerms, search, searchRadius]()
                 {
-                    ComputeDensityRange(particles, buffer, forceTerms);
+                    ComputeDensityRange(particles, buffer, forceTerms, search, searchRadius);
                 });
             }
             catch (...)
@@ -280,7 +298,7 @@ std::span<const SPHSolver::DensityJobBuffer> SPHSolver::ComputeDensity(
             // 投入に失敗した場合も、まだJobに渡していない範囲を呼び出し元で処理します。
             for (std::size_t index = jobCount; index < rangeCount; ++index)
             {
-                ComputeDensityRange(particles, ranges[index], forceTerms);
+                ComputeDensityRange(particles, ranges[index], forceTerms, search, searchRadius);
             }
             for (std::size_t index = 0u; index < jobCount; ++index)
             {
@@ -316,6 +334,43 @@ std::span<const SPHSolver::DensityJobBuffer> SPHSolver::ComputeDensity(
         overflowedRangeCount += buffer.m_HasOverflowed ? 1u : 0u;
         capacityBytes += buffer.m_Neighbors.capacity() * sizeof(CachedNeighbor)
             + buffer.m_Offsets.capacity() * sizeof(std::size_t);
+    }
+    if (search != NeighborSearch::Grid)
+    {
+        const bool hasOverflowed = overflowedRangeCount > 0u;
+        const bool isRebuilding = search == NeighborSearch::BuildVerlet;
+        if (hasOverflowed == true)
+        {
+            // 拡張リストに欠けた行があれば、現位置のGridへ戻します。同じStep内では再試行しません。
+            pVerlet->m_HasValidList = false;
+            pVerlet->m_SearchRadius = 0.0f;
+            cachedRowCount = 0u;
+            CPUProfileScope bucketProfile("Physics.Fluid.SPH.PrepareNeighborBuckets");
+            m_SpatialHash.PrepareNeighborBuckets(h);
+        }
+        else if (isRebuilding == true)
+        {
+            m_VerletReferencePositions.resize(particles.size());
+            for (std::size_t index = 0u; index < particles.size(); ++index)
+            {
+                m_VerletReferencePositions[index] = particles[index].Position;
+            }
+            pVerlet->m_HasValidList = true;
+        }
+
+        RecordSPHCounter("Physics.Fluid.SPH.VerletRebuildCount", isRebuilding ? 1.0 : 0.0);
+        RecordSPHCounter("Physics.Fluid.SPH.VerletReuseCount", isRebuilding ? 0.0 : 1.0);
+        RecordSPHCounter("Physics.Fluid.SPH.VerletOverflowCount", hasOverflowed ? 1.0 : 0.0);
+        if (hasOverflowed == false && acceptedNeighborCount > 0u)
+        {
+            const double ratio = static_cast<double>(cachedNeighborCount) / static_cast<double>(acceptedNeighborCount);
+            RecordSPHCounter("Physics.Fluid.SPH.VerletCandidateExpansionRatio", ratio);
+        }
+    }
+    if (pVerlet != nullptr)
+    {
+        RecordSPHCounter("Physics.Fluid.SPH.VerletReferenceCapacityBytes",
+            static_cast<double>(m_VerletReferencePositions.capacity() * sizeof(math::Vec3)));
     }
     if (overflowedRangeCount > 0u && m_Settings.ReuseCompletedNeighborRowsOnOverflow == false)
     {
@@ -366,85 +421,135 @@ std::span<const SPHSolver::DensityJobBuffer> SPHSolver::ComputeDensity(
 }
 
 void SPHSolver::ComputeDensityRange(std::vector<FluidParticle>& particles, DensityJobBuffer& buffer,
-    std::span<NeighborForceTerms> forceTerms) const
+    std::span<NeighborForceTerms> forceTerms, NeighborSearch search, float searchRadius) const
 {
     const float h = m_Settings.SmoothingRadius;
     const float hSq = h * h;
+    const float searchRadiusSq = searchRadius * searchRadius;
     const float nearZeroDistanceSq = math::Epsilon * math::Epsilon;
     const std::size_t limit = buffer.m_CacheLimit;
     bool isCaching = buffer.m_Offsets.empty() == false;
     const bool hasViscosity = m_Settings.Viscosity > 0.0f;
-    buffer.m_Neighbors.clear();
-    buffer.m_CachedRowCount = 0u;
-    buffer.m_HasOverflowed = false;
+    const bool isReusing = search == NeighborSearch::ReuseVerlet;
+    if (isReusing == false)
+    {
+        buffer.m_Neighbors.clear();
+        buffer.m_CachedRowCount = 0u;
+        buffer.m_HasOverflowed = false;
+        buffer.m_IsVerlet = search == NeighborSearch::BuildVerlet;
+    }
     // 総候補と半径内の候補は担当範囲内で集計し、同期後にProfilerへ登録します。
     uint64_t candidateVisitCount = 0u;
     uint64_t acceptedNeighborCount = 0u;
 
-    for (std::size_t i = buffer.m_RangeBegin; i < buffer.m_RangeEnd; ++i)
+    const auto appendNeighbor = [&](uint32_t index, float distanceSquared)
     {
-        FluidParticle& particle = particles[i];
-        float density = 0.0f;
-        // rho_i = sum_j m_j W(|x_i-x_j|, h)。self contributionも含めます。
-        m_SpatialHash.ForEachPreparedNeighborParticle(particle.Position, h, [&](uint32_t j)
+        if (buffer.m_Neighbors.size() == limit)
         {
-            ++candidateVisitCount;
-
-            if (j >= particles.size())
+            // 通常キャッシュの部分利用では途中の行を破棄します。Verletは全行が揃ったときだけ使います。
+            isCaching = false;
+            buffer.m_HasOverflowed = true;
+            if (buffer.m_IsVerlet == false && m_Settings.ReuseCompletedNeighborRowsOnOverflow == true)
             {
-                return;
+                buffer.m_Neighbors.resize(buffer.m_Offsets[buffer.m_CachedRowCount]);
             }
-
-            const FluidParticle& neighbor = particles[j];
-            const float rSq = (particle.Position - neighbor.Position).LengthSq();
-            if (rSq > hSq)
+            else
             {
-                return;
+                buffer.m_CachedRowCount = 0u;
             }
-
-            ++acceptedNeighborCount;
-            density += std::max(0.0f, neighbor.Mass)
-                * m_Kernel.EvaluatePoly6Density(rSq);
-
-            // 圧力はこの後に更新されるため、ここでは位置だけで確定する条件を保存します。
-            if (isCaching == true && j != i && (rSq <= nearZeroDistanceSq) == false)
-            {
-                if (buffer.m_Neighbors.size() == limit)
-                {
-                    // 途中の行を破棄して、Forceはその行以降をGridから再探索します。
-                    // 全体フォールバックでは完成済みの行も使用しません。
-                    isCaching = false;
-                    buffer.m_HasOverflowed = true;
-                    if (m_Settings.ReuseCompletedNeighborRowsOnOverflow == true)
-                    {
-                        buffer.m_Neighbors.resize(buffer.m_Offsets[buffer.m_CachedRowCount]);
-                    }
-                    else
-                    {
-                        buffer.m_CachedRowCount = 0u;
-                    }
-                    return;
-                }
-                if (buffer.m_Neighbors.size() == buffer.m_Neighbors.capacity())
-                {
-                    const std::size_t capacity = buffer.m_Neighbors.capacity();
-                    const std::size_t growth = std::max(InitialNeighborCapacity, capacity);
-                    buffer.m_Neighbors.reserve(capacity + std::min(growth, limit - capacity));
-                }
-                buffer.m_Neighbors.push_back({j, rSq});
-            }
-        });
-        particle.Density = density;
-        if (forceTerms.empty() == false)
-        {
-            particle.Pressure = EvaluatePressure(density);
-            forceTerms[i] = EvaluateNeighborForceTerms(particle, hasViscosity);
+            return;
         }
-        if (isCaching == true)
+        if (buffer.m_Neighbors.size() == buffer.m_Neighbors.capacity())
         {
-            ++buffer.m_CachedRowCount;
-            buffer.m_Offsets[buffer.m_CachedRowCount] = buffer.m_Neighbors.size();
+            const std::size_t capacity = buffer.m_Neighbors.capacity();
+            const std::size_t growth = std::max(InitialNeighborCapacity, capacity);
+            buffer.m_Neighbors.reserve(capacity + std::min(growth, limit - capacity));
         }
+        buffer.m_Neighbors.push_back({index, distanceSquared});
+    };
+
+    const auto computeRange = [&]<NeighborSearch Search>()
+    {
+        for (std::size_t i = buffer.m_RangeBegin; i < buffer.m_RangeEnd; ++i)
+        {
+            FluidParticle& particle = particles[i];
+            float density = 0.0f;
+            const auto accumulateDensity = [&](const FluidParticle& neighbor, float rSq)
+            {
+                // rho_i = sum_j m_j W(|x_i-x_j|, h)。self contributionも含めます。
+                if (rSq <= hSq)
+                {
+                    ++acceptedNeighborCount;
+                    density += std::max(0.0f, neighbor.Mass) * m_Kernel.EvaluatePoly6Density(rSq);
+                }
+            };
+            if constexpr (Search == NeighborSearch::ReuseVerlet)
+            {
+                const std::size_t row = i - buffer.m_RangeBegin;
+                const std::size_t begin = buffer.m_Offsets[row];
+                const std::size_t end = buffer.m_Offsets[row + 1u];
+                candidateVisitCount += end - begin;
+                for (std::size_t index = begin; index < end; ++index)
+                {
+                    CachedNeighbor& cached = buffer.m_Neighbors[index];
+                    const FluidParticle& neighbor = particles[cached.ParticleIndex];
+                    cached.DistanceSquared = (particle.Position - neighbor.Position).LengthSq();
+                    accumulateDensity(neighbor, cached.DistanceSquared);
+                }
+            }
+            else
+            {
+                m_SpatialHash.ForEachPreparedNeighborParticle(particle.Position, searchRadius, [&](uint32_t j)
+                {
+                    ++candidateVisitCount;
+                    if (j >= particles.size())
+                    {
+                        return;
+                    }
+
+                    const FluidParticle& neighbor = particles[j];
+                    const float rSq = (particle.Position - neighbor.Position).LengthSq();
+                    accumulateDensity(neighbor, rSq);
+                    if constexpr (Search == NeighborSearch::BuildVerlet)
+                    {
+                        // 後のSubstepでh内へ入る候補と、Densityに必要なselfを探索順で保持します。
+                        if (isCaching == true && rSq <= searchRadiusSq)
+                        {
+                            appendNeighbor(j, rSq);
+                        }
+                    }
+                    else if (isCaching == true && rSq <= hSq && j != i && rSq > nearZeroDistanceSq)
+                    {
+                        // 厳密なh判定済みのForce候補だけを保存します。
+                        appendNeighbor(j, rSq);
+                    }
+                });
+                if (isCaching == true)
+                {
+                    ++buffer.m_CachedRowCount;
+                    buffer.m_Offsets[buffer.m_CachedRowCount] = buffer.m_Neighbors.size();
+                }
+            }
+            particle.Density = density;
+            if (forceTerms.empty() == false)
+            {
+                particle.Pressure = EvaluatePressure(density);
+                forceTerms[i] = EvaluateNeighborForceTerms(particle, hasViscosity);
+            }
+        }
+    };
+
+    switch (search)
+    {
+    case NeighborSearch::Grid:
+        computeRange.template operator()<NeighborSearch::Grid>();
+        break;
+    case NeighborSearch::BuildVerlet:
+        computeRange.template operator()<NeighborSearch::BuildVerlet>();
+        break;
+    case NeighborSearch::ReuseVerlet:
+        computeRange.template operator()<NeighborSearch::ReuseVerlet>();
+        break;
     }
     buffer.m_Candidates = candidateVisitCount;
     buffer.m_Accepted = acceptedNeighborCount;
@@ -679,6 +784,11 @@ SPHSolver::ForceNeighborCounts SPHSolver::ComputeForceRange(std::vector<FluidPar
             for (std::size_t index = begin; index < end; ++index)
             {
                 const CachedNeighbor& cached = pCache->m_Neighbors[index];
+                if (pCache->m_IsVerlet && (cached.DistanceSquared > hSq
+                    || cached.DistanceSquared <= math::Epsilon * math::Epsilon))
+                {
+                    continue;
+                }
                 const FluidParticle& neighbor = particles[cached.ParticleIndex];
                 applyForce(cached.ParticleIndex, particle.Position - neighbor.Position, cached.DistanceSquared);
             }
@@ -840,13 +950,37 @@ void SPHSolver::ResolveBoundary(std::vector<FluidParticle>& particles) const
     }
 }
 
+bool SPHSolver::CanReuseVerletList(const std::vector<FluidParticle>& particles, const VerletStepState& verlet) const
+{
+    if (verlet.m_HasValidList == false || particles.size() != m_VerletReferencePositions.size())
+    {
+        return false;
+    }
+
+    Diagnostics::TraceScope trace("Physics.Fluid.SPH.VerletDisplacementCheck", Diagnostics::DiagnosticCategory::Physics);
+    for (std::size_t index = 0u; index < particles.size(); ++index)
+    {
+        const auto& current = particles[index].Position;
+        const auto& reference = m_VerletReferencePositions[index];
+        const double dx = static_cast<double>(current.x) - reference.x;
+        const double dy = static_cast<double>(current.y) - reference.y;
+        const double dz = static_cast<double>(current.z) - reference.z;
+        // 2粒子が接近する場合でも合計移動量がskinに達する前に作り直します。
+        if ((dx * dx + dy * dy + dz * dz < verlet.m_MaximumDisplacementSquared) == false)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 SPHSolver::ParticleStatistics SPHSolver::AdvanceSubstep(
-    std::vector<FluidParticle>& particles, float deltaTime, JobSystem* pJobSystem)
+    std::vector<FluidParticle>& particles, float deltaTime, JobSystem* pJobSystem, VerletStepState* pVerlet)
 {
     Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.Substep",
         Diagnostics::DiagnosticCategory::Physics);
     // Neighbor関係と圧力は位置に依存するため、各Substepで再計算します。
-    const auto cachedRanges = ComputeDensity(particles, true, pJobSystem);
+    const auto cachedRanges = ComputeDensity(particles, true, pJobSystem, pVerlet);
     ComputeForcesUsingCurrentGrid(particles, cachedRanges, pJobSystem);
     RecordSPHCounter("Physics.Fluid.SPH.ForceNeighborCacheUsed",
         cachedRanges.empty() ? 0.0 : 1.0);
@@ -889,6 +1023,25 @@ void SPHSolver::Step(std::vector<FluidParticle>& particles, float deltaTime, Job
     }
     else
     {
+        // 外部で並び替えや再初期化ができるため、有効なリストをStep間で引き継ぎません。
+        VerletStepState verlet;
+        VerletStepState* pVerlet = nullptr;
+        if (m_Settings.VerletSkinScale > 0.0f && m_Settings.MaximumCachedNeighbors >= particles.size()
+            && m_Settings.MaximumSubsteps > 1u)
+        {
+            const float h = m_Settings.SmoothingRadius;
+            const float skin = h * m_Settings.VerletSkinScale;
+            const float searchRadius = h + skin;
+            // floatの距離判定と探索半径の丸めを見込み、skin/2よりわずかに早く再構築します。
+            const double guard = 8.0 * std::numeric_limits<float>::epsilon() * searchRadius;
+            const double maximumDisplacement = 0.5 * (std::min<double>(skin, static_cast<double>(searchRadius) - h) - guard);
+            if (maximumDisplacement > 0.0 && std::isfinite(searchRadius * searchRadius))
+            {
+                verlet.m_SearchRadius = searchRadius;
+                verlet.m_MaximumDisplacementSquared = maximumDisplacement * maximumDisplacement;
+                pVerlet = &verlet;
+            }
+        }
         // 呼び出し元が前Step後に粒子を更新できるため、初回のCFLだけ再走査します。
         statistics = ScanParticleStatistics(particles);
         float remainingTime = deltaTime;
@@ -909,7 +1062,7 @@ void SPHSolver::Step(std::vector<FluidParticle>& particles, float deltaTime, Job
                 break;
             }
             substepDt = std::min(substepDt, remainingTime);
-            statistics = AdvanceSubstep(particles, substepDt, pJobSystem);
+            statistics = AdvanceSubstep(particles, substepDt, pJobSystem, pVerlet);
             remainingTime -= substepDt;
             minimumSubstepDeltaTime = std::min(minimumSubstepDeltaTime, substepDt);
             ++m_LastSubstepCount;
