@@ -32,6 +32,9 @@ struct SPHSettings
     std::size_t MaximumCachedNeighbors = 256u * 1024u;
     bool ReuseCompletedNeighborRowsOnOverflow = false;
 
+    // hに対するVerlet skinの比率。0では通常のSubstep近傍探索を使います。
+    float VerletSkinScale = 0.0f;
+
     // Equation of Stateが目標とする静止密度 rho_0 です。
     float RestDensity = 1000.0f;
 
