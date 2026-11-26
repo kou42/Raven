@@ -84,16 +84,35 @@ private:
         bool m_HasOverflowed = false;
     };
 
+    struct ParticleStatistics
+    {
+        void Accumulate(const FluidParticle& particle, float mass);
+        float GetMaximumSpeed() const;
+        float GetMaximumAcceleration() const;
+
+        float m_MaximumDensity = 0.0f;
+        float m_MaximumAbsolutePressure = 0.0f;
+        double m_MaximumSpeedSquared = 0.0;
+        double m_MaximumAccelerationForceSquared = 0.0;
+        double m_MaximumAccelerationMassSquared = 1.0;
+        float m_MaximumAccelerationMass = 1.0f;
+    };
+
     static constexpr std::size_t MaximumWorkerJobs = 7u;
     std::span<const DensityJobBuffer> ComputeDensity(
         std::vector<FluidParticle>& particles, bool isSubstep, JobSystem* pJobSystem);
-    void ComputeDensityRange(std::vector<FluidParticle>& particles, DensityJobBuffer& buffer) const;
+    void ComputeDensityRange(std::vector<FluidParticle>& particles, DensityJobBuffer& buffer,
+        std::span<NeighborForceTerms> forceTerms) const;
     void ComputeForcesUsingCurrentGrid(std::vector<FluidParticle>& particles,
         std::span<const DensityJobBuffer> cachedRanges, JobSystem* pJobSystem);
     ForceNeighborCounts ComputeForceRange(std::vector<FluidParticle>& particles,
         std::size_t rangeBegin, std::size_t rangeEnd,
         std::span<const DensityJobBuffer> cachedRanges) const noexcept;
-    void AdvanceSubstep(std::vector<FluidParticle>& particles, float deltaTime, JobSystem* pJobSystem);
+    float EvaluatePressure(float density) const;
+    NeighborForceTerms EvaluateNeighborForceTerms(const FluidParticle& particle, bool hasViscosity) const;
+    ParticleStatistics ScanParticleStatistics(const std::vector<FluidParticle>& particles) const;
+    float ComputeStableTimeStep(const ParticleStatistics& statistics, float maximumDeltaTime) const;
+    ParticleStatistics AdvanceSubstep(std::vector<FluidParticle>& particles, float deltaTime, JobSystem* pJobSystem);
 
 private:
     SPHSettings m_Settings{};

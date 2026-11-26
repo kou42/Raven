@@ -185,11 +185,35 @@ Debug／Release ビルドと Debug の `--test-fluid-sph` に成功しました�
 
 ## Phase 4 — Particle Pass 統合
 
-- [ ] Density 完了時に同じ粒子の Pressure / NeighborForceTerms を計算する。
-- [ ] Integrate と ResolveBoundary を統合し、境界処理後の最大速度・加速度・密度・圧力を集計する。
-- [ ] 次の Substep の CFL 計算に集計値を再利用する。Step 初回は外部変更を考慮して再集計する。
-- [ ] 最大速度・加速度の比較を二乗値で行い、平方根を集計後に計算する（極端な値での overflow に注意）。
-- [ ] 公開 API の単独呼び出しと無効 Mass 粒子の境界処理を維持する。
+- [x] Density 完了時に同じ粒子の Pressure / NeighborForceTerms を計算する。
+- [x] Integrate と ResolveBoundary を統合し、境界処理後の最大速度・加速度・密度・圧力を集計する。
+- [x] 次の Substep の CFL 計算に集計値を再利用する。Step 初回は外部変更を考慮して再集計する。
+- [x] 最大速度・加速度の比較を二乗値で行い、平方根を集計後に計算する（極端な値での overflow に注意）。
+- [x] 公開 API の単独呼び出しと無効 Mass 粒子の境界処理を維持する。
+
+
+### Phase 4 の実測と動作
+
+Density が確定した粒子から Pressure と Force 前計算項を作り、すべての Density Job が終了してから Force が読み取ります。公開 `ComputeDensity` と `ComputePressure` はそれぞれの値だけを更新します。公開 `ComputeForces` は呼び出し側が渡した Density と Pressure を使って前計算項を作ります。
+
+Force 完了後は粒子ごとに積分、Box 境界処理、統計集計を行います。無効 Mass の粒子は積分を省き、境界処理と速度集計は行います。初回 CFL は呼び出し元が変更した粒子状態を再走査し、2回目以降は境界処理後に集計済みの最大速度・加速度を使います。最後の Substep の集計結果を Step の診断にも使います。
+
+通常値は従来の float の二乗和を使い、float の二乗があふれる場合などは double で再計算します。加速度は Force と Mass の二乗の交差積で比較し、選んだ値の平方根のみを取得します。
+
+Phase 3 と同じ `Root.exe --benchmark-fluid-sph-density` を Windows x64 Release で実行しました。5 Step のウォームアップ後に20 Stepを計測した別セッション同士の比較です。
+
+| 粒子・配置 | Worker 上限 | Substep数 | Phase 3 中央値 ms | Phase 4 中央値 ms | Phase 3 p95 ms | Phase 4 p95 ms |
+|---|---:|---:|---:|---:|---:|---:|
+| 1,024 均一 | 0 | 7 | 5.36 | 5.12 | 5.54 | 5.22 |
+| 1,024 均一 | 4 | 7 | 4.58 | 3.77 | 4.62 | 4.00 |
+| 5,120 密集 | 0 | 15 | 889.74 | 890.48 | 895.28 | 906.49 |
+| 5,120 密集 | 4 | 15 | 222.41 | 223.76 | 223.87 | 224.83 |
+| 10,240 密集 | 0 | 16 | 2,079.39 | 2,073.96 | 2,095.45 | 2,085.76 |
+| 10,240 密集 | 4 | 16 | 494.81 | 492.17 | 498.70 | 505.36 |
+
+統合後のトレースでは、初回の再走査 `InitialParticleStatistics` は Step あたり1回、`IntegrateBoundaryStatistics` は Substep あたり1回です。独立していた Pressure／Force 前計算の時間は Density に含まれます。中央値は均一条件で短縮し、密集条件ではほぼ横ばいでした。10,240粒子の4 Workerでは p95 が増加しました。この計測だけで統合の効果とセッション間の変動を分離することはできません。
+
+Debug／Release ビルドと Debug の `--test-fluid-sph`、`--test-physics-collision` に成功しました。公開 API を順に呼ぶ参照経路と粒子状態、Substep 回数、最小 dt、上限フラグが一致しました。境界補正される無効 Mass 粒子、Step 間の外部速度変更、float の二乗範囲を超える速度と Force も検証しました。
 
 ## Phase 5 — Spatial Hash 最適化
 
