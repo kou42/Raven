@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -20,12 +21,18 @@ namespace
 {
 constexpr float MinimumSmoothingRadius = 1.0e-4f;
 constexpr float MinimumSpatialHashCellSizeScale = 0.01f;
-// 密集時は粒子数の二乗に近づくため、補助バッファを固定上限に抑えます。
-constexpr std::size_t MaximumCachedNeighbors = 256u * 1024u;
 constexpr std::size_t InitialNeighborCapacity = 1024u;
 // 小さい範囲ではJob投入・待機の固定費が目立つため、粒子数とJob数の双方を制限します。
 constexpr std::size_t MinimumParticlesPerForceRange = 512u;
 constexpr std::size_t MaximumForceJobs = 7u;
+
+using Clock = std::chrono::steady_clock;
+
+void RecordSPHCounter(const char* name, double value)
+{
+    CPUProfiler::Get().AddCounter(name, value);
+    Diagnostics::RecordCounter(name, value, Diagnostics::DiagnosticCategory::Physics);
+}
 
 void ResolveBoundaryAxis(float& position, float& velocity, float minimum, float maximum, float restitution)
 {
@@ -58,6 +65,12 @@ SPHSolver::SPHSolver(const SPHSettings& settings)
 
 void SPHSolver::SetSettings(const SPHSettings& settings)
 {
+    if (settings.MaximumCachedNeighbors < m_Settings.MaximumCachedNeighbors)
+    {
+        // 設定を下げた後も旧予算のバッファを保持し続けないようにします。
+        std::vector<CachedNeighbor>().swap(m_CachedNeighbors);
+        std::vector<std::size_t>().swap(m_CachedNeighborOffsets);
+    }
     m_Settings = settings;
     m_Settings.SmoothingRadius = std::max(settings.SmoothingRadius, MinimumSmoothingRadius);
     m_Kernel = SPHKernel(m_Settings.SmoothingRadius);
@@ -96,22 +109,31 @@ void SPHSolver::ComputeDensity(std::vector<FluidParticle>& particles)
     ComputeDensity(particles, false);
 }
 
-bool SPHSolver::ComputeDensity(std::vector<FluidParticle>& particles, bool shouldCacheNeighbors)
+std::size_t SPHSolver::ComputeDensity(std::vector<FluidParticle>& particles, bool isSubstep)
 {
     Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.Density", Diagnostics::DiagnosticCategory::Physics);
     m_SpatialHash.Build(particles);
     const float h = m_Settings.SmoothingRadius;
     const float hSq = h * h;
-    if (shouldCacheNeighbors == true)
+    if (isSubstep == true)
     {
+        // 診断TraceはGrid側で発行し、ここではCPUProfiler用の区間だけを追加します。
+        CPUProfileScope bucketProfile("Physics.Fluid.SPH.PrepareNeighborBuckets");
         m_SpatialHash.PrepareNeighborBuckets(h);
     }
     const float nearZeroDistanceSq = math::Epsilon * math::Epsilon;
-    bool hasCachedNeighbors = shouldCacheNeighbors && particles.size() <= MaximumCachedNeighbors;
-    if (hasCachedNeighbors == true)
+    const std::size_t limit = m_Settings.MaximumCachedNeighbors;
+    bool isCaching = isSubstep && limit > 0u;
+    bool hasOverflowed = false;
+    std::size_t cachedRowCount = 0u;
+    if (isSubstep == true)
     {
         m_CachedNeighbors.clear();
+    }
+    if (isCaching == true)
+    {
         m_CachedNeighborOffsets.resize(particles.size() + 1);
+        m_CachedNeighborOffsets[0] = 0u;
     }
 
     // Spatial Hashが返したCell候補数と、厳密なsupport radius判定を通過した数を分離します。
@@ -120,57 +142,82 @@ bool SPHSolver::ComputeDensity(std::vector<FluidParticle>& particles, bool shoul
     uint64_t candidateVisitCount = 0u;
     uint64_t acceptedNeighborCount = 0u;
 
-    for (std::size_t i = 0u; i < particles.size(); ++i)
     {
-        if (hasCachedNeighbors == true)
+        Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.DensityNeighborLoop",
+            Diagnostics::DiagnosticCategory::Physics);
+        for (std::size_t i = 0u; i < particles.size(); ++i)
         {
-            m_CachedNeighborOffsets[i] = m_CachedNeighbors.size();
-        }
-        FluidParticle& particle = particles[i];
-        float density = 0.0f;
-        // rho_i = sum_j m_j W(|x_i-x_j|, h)。self contributionも含めます。
-        m_SpatialHash.ForEachPreparedNeighborParticle(particle.Position, h, [&](uint32_t j)
-        {
-            ++candidateVisitCount;
-
-            if (j >= particles.size())
+            FluidParticle& particle = particles[i];
+            float density = 0.0f;
+            // rho_i = sum_j m_j W(|x_i-x_j|, h)。self contributionも含めます。
+            m_SpatialHash.ForEachPreparedNeighborParticle(particle.Position, h, [&](uint32_t j)
             {
-                return;
-            }
+                ++candidateVisitCount;
 
-            const FluidParticle& neighbor = particles[j];
-            const float rSq = (particle.Position - neighbor.Position).LengthSq();
-            if (rSq > hSq)
-            {
-                return;
-            }
-
-            ++acceptedNeighborCount;
-            density += std::max(0.0f, neighbor.Mass)
-                * m_Kernel.EvaluatePoly6Density(rSq);
-
-            // 圧力はこの後に更新されるため、ここでは位置だけで確定する条件を保存します。
-            if (hasCachedNeighbors == true && j != i && (rSq <= nearZeroDistanceSq) == false)
-            {
-                if (m_CachedNeighbors.size() == MaximumCachedNeighbors)
+                if (j >= particles.size())
                 {
-                    // 部分的な近傍リストを使うと力が欠けるため、このSubstep全体をGrid探索へ戻します。
-                    hasCachedNeighbors = false;
                     return;
                 }
-                if (m_CachedNeighbors.size() == m_CachedNeighbors.capacity())
+
+                const FluidParticle& neighbor = particles[j];
+                const float rSq = (particle.Position - neighbor.Position).LengthSq();
+                if (rSq > hSq)
                 {
-                    m_CachedNeighbors.reserve(std::min(MaximumCachedNeighbors,
-                        std::max(InitialNeighborCapacity, m_CachedNeighbors.capacity() * 2)));
+                    return;
                 }
-                m_CachedNeighbors.push_back({j, rSq});
+
+                ++acceptedNeighborCount;
+                density += std::max(0.0f, neighbor.Mass)
+                    * m_Kernel.EvaluatePoly6Density(rSq);
+
+                // 圧力はこの後に更新されるため、ここでは位置だけで確定する条件を保存します。
+                if (isCaching == true && j != i && (rSq <= nearZeroDistanceSq) == false)
+                {
+                    if (m_CachedNeighbors.size() == limit)
+                    {
+                        // 途中の行を破棄して、Forceはその行以降をGridから再探索します。
+                        // 全体フォールバックでは完成済みの行も使用しません。
+                        isCaching = false;
+                        hasOverflowed = true;
+                        if (m_Settings.ReuseCompletedNeighborRowsOnOverflow == true)
+                        {
+                            m_CachedNeighbors.resize(m_CachedNeighborOffsets[cachedRowCount]);
+                        }
+                        else
+                        {
+                            cachedRowCount = 0u;
+                        }
+                        return;
+                    }
+                    if (m_CachedNeighbors.size() == m_CachedNeighbors.capacity())
+                    {
+                        const std::size_t capacity = m_CachedNeighbors.capacity();
+                        const std::size_t growth = std::max(InitialNeighborCapacity, capacity);
+                        m_CachedNeighbors.reserve(capacity + std::min(growth, limit - capacity));
+                    }
+                    m_CachedNeighbors.push_back({j, rSq});
+                }
+            });
+            particle.Density = density;
+            if (isCaching == true)
+            {
+                ++cachedRowCount;
+                m_CachedNeighborOffsets[cachedRowCount] = m_CachedNeighbors.size();
             }
-        });
-        particle.Density = density;
+        }
     }
-    if (hasCachedNeighbors == true)
+
+    if (isSubstep == true)
     {
-        m_CachedNeighborOffsets.back() = m_CachedNeighbors.size();
+        RecordSPHCounter("Physics.Fluid.SPH.NeighborCacheCount",
+            static_cast<double>(m_CachedNeighbors.size()));
+        RecordSPHCounter("Physics.Fluid.SPH.NeighborCacheOverflow",
+            hasOverflowed ? 1.0 : 0.0);
+        // 使用中の件数と区別して、再利用のため保持している行オフセットも含めます。
+        const std::size_t capacityBytes = m_CachedNeighbors.capacity() * sizeof(CachedNeighbor)
+            + m_CachedNeighborOffsets.capacity() * sizeof(std::size_t);
+        RecordSPHCounter("Physics.Fluid.SPH.NeighborCacheCapacityBytes",
+            static_cast<double>(capacityBytes));
     }
 
     CPUProfiler& profiler = CPUProfiler::Get();
@@ -198,7 +245,7 @@ bool SPHSolver::ComputeDensity(std::vector<FluidParticle>& particles, bool shoul
     profiler.AddCounter(
         "Physics.Fluid.SPH.DensityAverageAcceptedNeighborsPerParticle",
         averageDensityNeighbors);
-    return hasCachedNeighbors;
+    return cachedRowCount;
 }
 
 void SPHSolver::ComputePressure(std::vector<FluidParticle>& particles) const
@@ -220,33 +267,37 @@ void SPHSolver::ComputeDensityAndPressure(std::vector<FluidParticle>& particles)
 void SPHSolver::ComputeForces(std::vector<FluidParticle>& particles)
 {
     m_SpatialHash.Build(particles);
-    ComputeForcesUsingCurrentGrid(particles, false, nullptr);
+    ComputeForcesUsingCurrentGrid(particles, 0u, nullptr);
 }
 
 void SPHSolver::ComputeForcesUsingCurrentGrid(
-    std::vector<FluidParticle>& particles, bool hasCachedNeighbors, JobSystem* pJobSystem)
+    std::vector<FluidParticle>& particles, std::size_t cachedRowCount, JobSystem* pJobSystem)
 {
     Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.Force", Diagnostics::DiagnosticCategory::Physics);
     const bool hasViscosity = m_Settings.Viscosity > 0.0f;
 
     // DensityとPressureが確定した時点で、複数の近傍から参照される除算を粒子ごとに済ませます。
     // 公開ComputeForcesも呼び出し時点の粒子データから毎回作り直します。
-    m_NeighborForceTerms.resize(particles.size());
-    for (std::size_t i = 0u; i < particles.size(); ++i)
     {
-        const FluidParticle& particle = particles[i];
-        NeighborForceTerms& terms = m_NeighborForceTerms[i];
-        const float mass = std::max(0.0f, particle.Mass);
-        if (mass <= math::Epsilon || particle.Density <= math::Epsilon)
+        Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.NeighborForceTerms",
+            Diagnostics::DiagnosticCategory::Physics);
+        m_NeighborForceTerms.resize(particles.size());
+        for (std::size_t i = 0u; i < particles.size(); ++i)
         {
-            terms = {};
-            continue;
-        }
+            const FluidParticle& particle = particles[i];
+            NeighborForceTerms& terms = m_NeighborForceTerms[i];
+            const float mass = std::max(0.0f, particle.Mass);
+            if (mass <= math::Epsilon || particle.Density <= math::Epsilon)
+            {
+                terms = {};
+                continue;
+            }
 
-        terms.Mass = mass;
-        terms.PressureOverDensitySquared =
-            particle.Pressure / (particle.Density * particle.Density);
-        terms.InverseDensity = hasViscosity ? 1.0f / particle.Density : 0.0f;
+            terms.Mass = mass;
+            terms.PressureOverDensitySquared =
+                particle.Pressure / (particle.Density * particle.Density);
+            terms.InverseDensity = hasViscosity ? 1.0f / particle.Density : 0.0f;
+        }
     }
 
     std::size_t jobLimit = 0u;
@@ -261,45 +312,75 @@ void SPHSolver::ComputeForcesUsingCurrentGrid(
     std::size_t jobCount = 0u;
     std::size_t rangeBegin = 0u;
     const std::size_t rangeSize = particles.size() / (jobLimit + 1u);
-    for (; jobCount < jobLimit; ++jobCount)
+    const bool shouldMeasureJobs = CPUProfiler::Get().IsEnabled()
+        || Diagnostics::IsMeasurementsEnabled();
+    if (jobLimit > 0u)
     {
-        try
+        Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.ForceJobSubmit",
+            Diagnostics::DiagnosticCategory::Physics);
+        for (; jobCount < jobLimit; ++jobCount)
         {
-            // Grid、近傍キャッシュ、前計算済みの項は読取専用です。
-            // Jobは担当粒子のForceだけを書き、近傍粒子のForceは読みません。
-            jobs[jobCount] = pJobSystem->Submit(
-                [this, &particles, rangeBegin, rangeSize, hasCachedNeighbors]()
-                {
-                    return ComputeForceRange(
-                        particles, rangeBegin, rangeBegin + rangeSize, hasCachedNeighbors);
-                });
+            try
+            {
+                // Grid、近傍キャッシュ、前計算済みの項は読取専用です。
+                // Jobは担当粒子のForceだけを書き、近傍粒子のForceは読みません。
+                jobs[jobCount] = pJobSystem->Submit(
+                    [this, &particles, rangeBegin, rangeSize, cachedRowCount, shouldMeasureJobs]()
+                    {
+                        const auto start = shouldMeasureJobs ? Clock::now() : Clock::time_point{};
+                        ForceNeighborCounts result = ComputeForceRange(
+                            particles, rangeBegin, rangeBegin + rangeSize, cachedRowCount);
+                        if (shouldMeasureJobs == true)
+                        {
+                            result.m_Milliseconds =
+                                std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+                        }
+                        return result;
+                    });
+            }
+            catch (...)
+            {
+                // 投入済みJobが借用中のデータを保ち、未投入範囲を呼び出し元で処理します。
+                break;
+            }
+            if (jobs[jobCount].valid() == false)
+            {
+                break;
+            }
+            rangeBegin += rangeSize;
         }
-        catch (...)
-        {
-            // 投入済みJobが借用中のデータを保ち、未投入範囲を呼び出し元で処理します。
-            break;
-        }
-        if (jobs[jobCount].valid() == false)
-        {
-            break;
-        }
-        rangeBegin += rangeSize;
     }
 
     ForceNeighborCounts counts = ComputeForceRange(
-        particles, rangeBegin, particles.size(), hasCachedNeighbors);
+        particles, rangeBegin, particles.size(), cachedRowCount);
+    double minimumJobMilliseconds = std::numeric_limits<double>::max();
+    double maximumJobMilliseconds = 0.0;
     // 積分でPositionとVelocityを書き換える前に、借用中のJobをすべて完了させます。
-    for (std::size_t index = 0u; index < jobCount; ++index)
+    if (jobCount > 0u)
     {
-        const ForceNeighborCounts jobCounts = jobs[index].get();
-        counts.m_Candidates += jobCounts.m_Candidates;
-        counts.m_Accepted += jobCounts.m_Accepted;
+        Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.ForceJobWait",
+            Diagnostics::DiagnosticCategory::Physics);
+        for (std::size_t index = 0u; index < jobCount; ++index)
+        {
+            const ForceNeighborCounts jobCounts = jobs[index].get();
+            counts.m_Candidates += jobCounts.m_Candidates;
+            counts.m_Accepted += jobCounts.m_Accepted;
+            minimumJobMilliseconds = std::min(minimumJobMilliseconds, jobCounts.m_Milliseconds);
+            maximumJobMilliseconds = std::max(maximumJobMilliseconds, jobCounts.m_Milliseconds);
+        }
+    }
+
+    // Workerは計測値をfutureで返し、共有Profilerへの登録は同期後に行います。
+    if (jobCount > 0u && shouldMeasureJobs == true)
+    {
+        RecordSPHCounter("Physics.Fluid.SPH.ForceJobMinMilliseconds", minimumJobMilliseconds);
+        RecordSPHCounter("Physics.Fluid.SPH.ForceJobMaxMilliseconds", maximumJobMilliseconds);
     }
 
     const uint64_t candidateVisitCount = counts.m_Candidates;
     const uint64_t acceptedNeighborCount = counts.m_Accepted;
     CPUProfiler& profiler = CPUProfiler::Get();
-    profiler.AddCounter("Physics.Fluid.SPH.ForceJobCount", static_cast<double>(jobCount));
+    RecordSPHCounter("Physics.Fluid.SPH.ForceJobCount", static_cast<double>(jobCount));
     profiler.AddCounter(
         "Physics.Fluid.SPH.ForceNeighborCandidateCount",
         static_cast<double>(candidateVisitCount));
@@ -327,7 +408,7 @@ void SPHSolver::ComputeForcesUsingCurrentGrid(
 }
 
 SPHSolver::ForceNeighborCounts SPHSolver::ComputeForceRange(std::vector<FluidParticle>& particles,
-    std::size_t rangeBegin, std::size_t rangeEnd, bool hasCachedNeighbors) const noexcept
+    std::size_t rangeBegin, std::size_t rangeEnd, std::size_t cachedRowCount) const noexcept
 {
     const float h = m_Settings.SmoothingRadius;
     const float hSq = h * h;
@@ -374,7 +455,7 @@ SPHSolver::ForceNeighborCounts SPHSolver::ComputeForceRange(std::vector<FluidPar
             }
         };
 
-        if (hasCachedNeighbors == true)
+        if (i < cachedRowCount)
         {
             const std::size_t begin = m_CachedNeighborOffsets[i];
             const std::size_t end = m_CachedNeighborOffsets[i + 1];
@@ -417,6 +498,8 @@ float SPHSolver::ComputeStableTimeStep(
     const std::vector<FluidParticle>& particles,
     float maximumDeltaTime) const
 {
+    Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.StableTimeStep",
+        Diagnostics::DiagnosticCategory::Physics);
     if (maximumDeltaTime <= 0.0f)
     {
         return 0.0f;
@@ -473,7 +556,7 @@ float SPHSolver::ComputeStableTimeStep(
 
 void SPHSolver::Integrate(std::vector<FluidParticle>& particles, float deltaTime) const
 {
-    Diagnostics::TraceScope trace("Physics.Fluid.SPH.Integrate", Diagnostics::DiagnosticCategory::Physics);
+    Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.Integrate", Diagnostics::DiagnosticCategory::Physics);
     if (deltaTime <= 0.0f)
     {
         return;
@@ -493,7 +576,7 @@ void SPHSolver::Integrate(std::vector<FluidParticle>& particles, float deltaTime
 
 void SPHSolver::ResolveBoundary(std::vector<FluidParticle>& particles) const
 {
-    Diagnostics::TraceScope trace("Physics.Fluid.SPH.ResolveBoundary", Diagnostics::DiagnosticCategory::Physics);
+    Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.ResolveBoundary", Diagnostics::DiagnosticCategory::Physics);
     if (m_Settings.BoundaryEnabled == false)
     {
         return;
@@ -531,12 +614,16 @@ void SPHSolver::ResolveBoundary(std::vector<FluidParticle>& particles) const
 void SPHSolver::AdvanceSubstep(
     std::vector<FluidParticle>& particles, float deltaTime, JobSystem* pJobSystem)
 {
+    Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.Substep",
+        Diagnostics::DiagnosticCategory::Physics);
     // Neighbor関係と圧力は位置に依存するため、各Substepで再計算します。
-    const bool hasCachedNeighbors = ComputeDensity(particles, true);
+    const std::size_t cachedRowCount = ComputeDensity(particles, true);
+    RecordSPHCounter("Physics.Fluid.SPH.NeighborCacheCompletedRowCount",
+        static_cast<double>(cachedRowCount));
     ComputePressure(particles);
-    ComputeForcesUsingCurrentGrid(particles, hasCachedNeighbors, pJobSystem);
-    Diagnostics::RecordCounter("Physics.Fluid.SPH.ForceNeighborCacheUsed",
-        hasCachedNeighbors ? 1.0 : 0.0, Diagnostics::DiagnosticCategory::Physics);
+    ComputeForcesUsingCurrentGrid(particles, cachedRowCount, pJobSystem);
+    RecordSPHCounter("Physics.Fluid.SPH.ForceNeighborCacheUsed",
+        cachedRowCount > 0u ? 1.0 : 0.0);
     Integrate(particles, deltaTime);
     ResolveBoundary(particles);
 }
@@ -596,18 +683,22 @@ void SPHSolver::Step(std::vector<FluidParticle>& particles, float deltaTime, Job
     float maximumAbsolutePressure = 0.0f;
     float maximumSpeed = 0.0f;
     float maximumAcceleration = 0.0f;
-    for (const FluidParticle& particle : particles)
     {
-        maximumDensity = std::max(maximumDensity, particle.Density);
-        maximumAbsolutePressure = std::max(maximumAbsolutePressure, std::abs(particle.Pressure));
-        maximumSpeed = std::max(maximumSpeed, particle.Velocity.Length());
-
-        const float mass = std::max(0.0f, particle.Mass);
-        if (mass > math::Epsilon)
+        Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.StepStatistics",
+            Diagnostics::DiagnosticCategory::Physics);
+        for (const FluidParticle& particle : particles)
         {
-            maximumAcceleration = std::max(
-                maximumAcceleration,
-                particle.Force.Length() / mass);
+            maximumDensity = std::max(maximumDensity, particle.Density);
+            maximumAbsolutePressure = std::max(maximumAbsolutePressure, std::abs(particle.Pressure));
+            maximumSpeed = std::max(maximumSpeed, particle.Velocity.Length());
+
+            const float mass = std::max(0.0f, particle.Mass);
+            if (mass > math::Epsilon)
+            {
+                maximumAcceleration = std::max(
+                    maximumAcceleration,
+                    particle.Force.Length() / mass);
+            }
         }
     }
 

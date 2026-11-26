@@ -1,7 +1,13 @@
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
+#include <iostream>
+#include <map>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "Raven/Core/CPUProfiler.h"
@@ -18,6 +24,148 @@
 
 namespace Raven::ph::tests
 {
+
+int RunFluidSPHBenchmark(bool compareCache)
+{
+    constexpr std::size_t workerCount = 4u;
+    const std::size_t warmupSteps = compareCache ? 5u : 20u;
+    const std::size_t sampleSteps = compareCache ? 20u : 300u;
+    constexpr float deltaTime = 1.0f / 60.0f;
+    constexpr std::string_view prefix = "Physics.Fluid.SPH.";
+    JobSystem jobSystem(workerCount);
+    CPUProfiler& profiler = CPUProfiler::Get();
+    profiler.SetEnabled(true);
+    profiler.BeginFrame();
+
+    std::cout << std::fixed << std::setprecision(6);
+    std::cout << "workers=" << workerCount << ",warmup=" << warmupSteps
+        << ",samples=" << sampleSteps << ",dt_s=" << deltaTime << '\n';
+    struct CacheConfiguration
+    {
+        std::size_t m_Limit;
+        bool m_ShouldReuseRows;
+    };
+    constexpr std::size_t kilo = 1024u;
+    const std::vector<CacheConfiguration> configurations = compareCache
+        ? std::vector<CacheConfiguration>{
+            {0u, false}, {256u * kilo, false}, {256u * kilo, true},
+            {512u * kilo, false}, {512u * kilo, true}, {kilo * kilo, false},
+            {kilo * kilo, true}, {2u * kilo * kilo, false}, {2u * kilo * kilo, true}}
+        : std::vector<CacheConfiguration>{{SPHSettings{}.MaximumCachedNeighbors,
+            SPHSettings{}.ReuseCompletedNeighborRowsOnOverflow}};
+    struct ParticleConfiguration
+    {
+        std::size_t m_Count;
+        float m_Spacing;
+    };
+    const std::vector<ParticleConfiguration> layouts = compareCache
+        ? std::vector<ParticleConfiguration>{{1024u, 0.065f}, {5120u, 0.025f}, {10240u, 0.025f}}
+        : std::vector<ParticleConfiguration>{
+            {1024u, 0.065f}, {1024u, 0.025f}, {5120u, 0.065f},
+            {5120u, 0.025f}, {10240u, 0.065f}, {10240u, 0.025f}};
+    for (const auto& [particleCount, spacing] : layouts)
+    {
+        for (const auto& [cacheLimit, shouldReuseRows] : configurations)
+        {
+            SPHSettings settings;
+            settings.MaximumCachedNeighbors = cacheLimit;
+            settings.ReuseCompletedNeighborRowsOnOverflow = shouldReuseRows;
+            settings.BoundaryEnabled = true;
+            settings.BoundaryMaximum = {3.0f, 3.0f, 3.0f};
+            SPHSolver solver(settings);
+            std::vector<FluidParticle> initial(particleCount);
+            const auto side = static_cast<std::size_t>(std::ceil(std::cbrt(particleCount)));
+            for (std::size_t index = 0u; index < particleCount; ++index)
+            {
+                initial[index].Position = {
+                    static_cast<float>(index % side) * spacing,
+                    static_cast<float>((index / side) % side) * spacing,
+                    static_cast<float>(index / (side * side)) * spacing};
+                initial[index].Mass = settings.RestDensity * spacing * spacing * spacing;
+            }
+
+            std::vector<FluidParticle> particles;
+            std::vector<double> stepMilliseconds;
+            stepMilliseconds.reserve(sampleSteps);
+            struct Metric
+            {
+                double m_Sum = 0.0;
+                double m_Maximum = 0.0;
+                std::size_t m_Count = 0u;
+
+                void Add(double value)
+                {
+                    m_Sum += value;
+                    m_Maximum = std::max(m_Maximum, value);
+                    ++m_Count;
+                }
+            };
+            std::map<std::string, Metric> durations;
+            std::map<std::string, Metric> counters;
+            for (std::size_t sample = 0u; sample < warmupSteps + sampleSteps; ++sample)
+            {
+                // 粒子配置を毎回復元し、密集条件が時間経過で変わるのを防ぎます。
+                // Solverは再利用するため、キャッシュの確保はウォームアップに含まれます。
+                particles = initial;
+                solver.Step(particles, deltaTime, &jobSystem);
+                profiler.BeginFrame();
+                if (sample < warmupSteps)
+                {
+                    continue;
+                }
+                const CPUProfileFrame& frame = profiler.GetLastFrame();
+                for (const CPUProfileResult& result : frame.Results)
+                {
+                    if (result.Name.starts_with(prefix))
+                    {
+                        durations[result.Name.substr(prefix.size())].Add(result.DurationMilliseconds);
+                    }
+                    if (result.Name == "Physics.Fluid.SPH.Step")
+                    {
+                        stepMilliseconds.push_back(result.DurationMilliseconds);
+                    }
+                }
+                for (const CPUProfileCounter& counter : frame.Counters)
+                {
+                    if (counter.Name.starts_with(prefix))
+                    {
+                        counters[counter.Name.substr(prefix.size())].Add(counter.Value);
+                    }
+                }
+            }
+
+            if (stepMilliseconds.size() != sampleSteps)
+            {
+                std::cerr << "SPH benchmark is missing Step timings.\n";
+                return 1;
+            }
+            std::sort(stepMilliseconds.begin(), stepMilliseconds.end());
+            const double median = (stepMilliseconds[sampleSteps / 2u - 1u]
+                + stepMilliseconds[sampleSteps / 2u]) * 0.5;
+            std::cout << "particles=" << particleCount << ",spacing=" << spacing
+                << ",cache_limit=" << cacheLimit << ",reuse_rows=" << shouldReuseRows
+                << ",step_median_ms=" << median
+                << ",step_p95_ms=" << stepMilliseconds[sampleSteps * 95u / 100u - 1u]
+                << ",step_max_ms=" << stepMilliseconds.back() << '\n';
+
+            // 親区間は子区間を含むため、各項目を独立して表示します。
+            std::cout << "scope,ms_per_step,ms_per_call,calls_per_step\n";
+            for (const auto& [name, metric] : durations)
+            {
+                std::cout << name << ',' << metric.m_Sum / sampleSteps << ','
+                    << metric.m_Sum / metric.m_Count << ','
+                    << static_cast<double>(metric.m_Count) / sampleSteps << '\n';
+            }
+            std::cout << "counter,sum_per_step,mean_per_call,max\n";
+            for (const auto& [name, metric] : counters)
+            {
+                std::cout << name << ',' << metric.m_Sum / sampleSteps << ','
+                    << metric.m_Sum / metric.m_Count << ',' << metric.m_Maximum << '\n';
+            }
+        }
+    }
+    return 0;
+}
 
 void RunFluidSPHSelfTests()
 {
@@ -43,6 +191,8 @@ void RunFluidSPHSelfTests()
             {
                 const auto& actual = particles[index];
                 const auto& expectedParticle = expected[index];
+                assert(std::isfinite(actual.Density));
+                assert(std::isfinite(actual.Pressure));
                 assert(actual.Density == expectedParticle.Density);
                 assert(actual.Pressure == expectedParticle.Pressure);
                 assert((actual.Force - expectedParticle.Force).LengthSq() == 0.0f);
@@ -50,6 +200,13 @@ void RunFluidSPHSelfTests()
                 assert((actual.Position - expectedParticle.Position).LengthSq() == 0.0f);
             }
         };
+
+        std::vector<FluidParticle> emptyParticles;
+        checkStep(emptyParticles);
+        assert(solver.GetLastSubstepCount() == 0u);
+        std::vector<FluidParticle> singleParticle(1);
+        checkStep(singleParticle);
+        assert(solver.GetLastSubstepCount() == 1u);
 
         std::vector<FluidParticle> particles(6);
         particles[1].Position.x = 0.0625f;
@@ -71,6 +228,49 @@ void RunFluidSPHSelfTests()
         // 上限超過の後も、移動済みの粒子から新しいSubstep用の近傍を構築します。
         particles[4].Position.x = 0.03125f;
         checkStep(particles);
+
+        // 同じSolverで上限を変更し、完成済みの行と途中の行を切り分けます。
+        std::vector<FluidParticle> cluster(4u);
+        for (std::size_t index = 0u; index < cluster.size(); ++index)
+        {
+            cluster[index].Position.x = static_cast<float>(index) * 0.01f;
+        }
+        settings.ReuseCompletedNeighborRowsOnOverflow = true;
+        CPUProfiler& profiler = CPUProfiler::Get();
+        profiler.BeginFrame();
+        const auto checkCapacity = [&](std::size_t limit, double expectedRows, double expectedOverflow)
+        {
+            settings.MaximumCachedNeighbors = limit;
+            solver.SetSettings(settings);
+            auto inputs = cluster;
+            checkStep(inputs);
+            profiler.BeginFrame();
+            const auto readCounter = [&](std::string_view name)
+            {
+                for (const auto& counter : profiler.GetLastFrame().Counters)
+                {
+                    if (counter.Name == name)
+                    {
+                        return counter.Value;
+                    }
+                }
+                return -1.0;
+            };
+            assert(readCounter("Physics.Fluid.SPH.NeighborCacheCompletedRowCount") == expectedRows);
+            assert(readCounter("Physics.Fluid.SPH.NeighborCacheOverflow") == expectedOverflow);
+            const double bytes = readCounter("Physics.Fluid.SPH.NeighborCacheCapacityBytes");
+            assert(bytes >= 0.0);
+            assert(bytes <= limit * sizeof(float) * 2u + (cluster.size() + 1u) * sizeof(std::size_t));
+            if (limit == 0u)
+            {
+                assert(bytes == 0.0);
+            }
+        };
+        checkCapacity(12u, 4.0, 0.0);
+        checkCapacity(5u, 1.0, 1.0);
+        checkCapacity(2u, 0.0, 1.0);
+        checkCapacity(0u, 0.0, 0.0);
+        checkCapacity(12u, 4.0, 0.0);
     }
 
     {
@@ -117,6 +317,37 @@ void RunFluidSPHSelfTests()
             profiler.BeginFrame();
             const auto parallelCounters = readForceCounters();
 
+            const auto readCounter = [&](std::string_view name)
+            {
+                for (const CPUProfileCounter& counter : profiler.GetLastFrame().Counters)
+                {
+                    if (counter.Name == name)
+                    {
+                        return counter.Value;
+                    }
+                }
+                return -1.0;
+            };
+            const double cachedCount = readCounter("Physics.Fluid.SPH.NeighborCacheCount");
+            const double capacityBytes = readCounter("Physics.Fluid.SPH.NeighborCacheCapacityBytes");
+            assert(capacityBytes >= cachedCount * (sizeof(uint32_t) + sizeof(float)));
+            assert(readCounter("Physics.Fluid.SPH.NeighborCacheOverflow") == (expectsCache ? 0.0 : 1.0));
+            assert(readCounter("Physics.Fluid.SPH.ForceNeighborCacheUsed") == (expectsCache ? 1.0 : 0.0));
+            assert(cachedCount == (expectsCache ? parallelCounters[1] : 262144.0));
+
+            const double minimumJobTime = readCounter("Physics.Fluid.SPH.ForceJobMinMilliseconds");
+            const double maximumJobTime = readCounter("Physics.Fluid.SPH.ForceJobMaxMilliseconds");
+            if (expectedJobCount > 0.0)
+            {
+                assert(minimumJobTime >= 0.0);
+                assert(maximumJobTime >= minimumJobTime);
+            }
+            else
+            {
+                assert(minimumJobTime == -1.0);
+                assert(maximumJobTime == -1.0);
+            }
+
             assert(serialCounters[1] > 0.0);
             assert((serialCounters[0] == serialCounters[1]) == expectsCache);
             assert(serialCounters[0] == parallelCounters[0]);
@@ -151,6 +382,24 @@ void RunFluidSPHSelfTests()
             particles[index].Position = {2.0f + static_cast<float>(index) * 0.000125f, 0.0f, 0.0f};
         }
         checkParallelStep(particles, false, 1.0);
+
+        auto expected = particles;
+        serialSolver.Step(expected, 1.0e-4f);
+        settings.ReuseCompletedNeighborRowsOnOverflow = true;
+        parallelSolver.SetSettings(settings);
+        parallelSolver.Step(particles, 1.0e-4f, &jobSystem);
+        profiler.BeginFrame();
+        const auto partialCounters = readForceCounters();
+        assert(partialCounters[0] > partialCounters[1]);
+        assert(partialCounters[2] == 1.0);
+        for (std::size_t index = 0u; index < particles.size(); ++index)
+        {
+            assert(particles[index].Density == expected[index].Density);
+            assert(particles[index].Pressure == expected[index].Pressure);
+            assert((particles[index].Force - expected[index].Force).LengthSq() == 0.0f);
+            assert((particles[index].Velocity - expected[index].Velocity).LengthSq() == 0.0f);
+            assert((particles[index].Position - expected[index].Position).LengthSq() == 0.0f);
+        }
     }
 
     {

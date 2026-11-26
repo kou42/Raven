@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include "Raven/Math/MathVector.h"
@@ -26,6 +27,10 @@ struct SPHSettings
     // Neighbor QueryはsearchRadiusから必要Cell範囲を計算するため、この値を変更しても
     // 厳密なsupport radius判定はhのままで、物理結果を変えずに候補探索効率だけ比較できます。
     float SpatialHashCellSizeScale = 1.0f;
+
+    // 近傍エントリ数の上限です。0で無効化します。行オフセットは別に確保します。
+    std::size_t MaximumCachedNeighbors = 256u * 1024u;
+    bool ReuseCompletedNeighborRowsOnOverflow = false;
 
     // Equation of Stateが目標とする静止密度 rho_0 です。
     float RestDensity = 1000.0f;
