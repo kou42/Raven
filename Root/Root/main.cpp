@@ -85,7 +85,7 @@
 
 namespace Raven::ph::tests { void RunFluidSPHSelfTests(); }
 
-namespace Raven::ph::tests { int RunFluidSPHBenchmark(bool compareCache); }
+namespace Raven::ph::tests { int RunFluidSPHBenchmark(bool compareCache, bool compareDensity); }
 
 int main(int argc, char* argv[])
 {
@@ -401,9 +401,11 @@ int main(int argc, char* argv[])
         // 性能値を最適化構成でも比較できるよう、Astro benchmarkはDebug限定にしません。
         // ApplicationやGPUを初期化せず、決定的なCPU入力だけを測定して終了します。
         if (backendArgument == "--benchmark-fluid-sph"
-            || backendArgument == "--benchmark-fluid-sph-cache")
+            || backendArgument == "--benchmark-fluid-sph-cache"
+            || backendArgument == "--benchmark-fluid-sph-density")
         {
-            return Raven::ph::tests::RunFluidSPHBenchmark(backendArgument == "--benchmark-fluid-sph-cache");
+            return Raven::ph::tests::RunFluidSPHBenchmark(backendArgument == "--benchmark-fluid-sph-cache",
+                backendArgument == "--benchmark-fluid-sph-density");
         }
         if (backendArgument == "--benchmark-astro-gravity")
         {
@@ -490,7 +492,7 @@ int main(int argc, char* argv[])
                 "--test-character-animation, "
                 "--benchmark-containers, --benchmark-flat-hash-map, --benchmark-flat-hash-set, --benchmark-name, "
                 "--scene-dx12, --scene-vulkan, --scene-triangle-vulkan, "
-                "--clear-opengl, --clear-vulkan, --clear-dx12, --benchmark-fluid-sph, --benchmark-fluid-sph-cache or --benchmark-astro-gravity.\\n";
+                "--clear-opengl, --clear-vulkan, --clear-dx12, --benchmark-fluid-sph, --benchmark-fluid-sph-cache, --benchmark-fluid-sph-density or --benchmark-astro-gravity.\\n";
             return 1;
         }
     }
