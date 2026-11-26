@@ -118,9 +118,12 @@ private:
         std::vector<FluidParticle>& particles, bool isSubstep, JobSystem* pJobSystem,
         VerletStepState* pVerlet = nullptr);
     void ComputeDensityRange(std::vector<FluidParticle>& particles, DensityJobBuffer& buffer,
-        std::span<NeighborForceTerms> forceTerms, NeighborSearch search, float searchRadius) const;
+        std::span<NeighborForceTerms> forceTerms, NeighborSearch search, float searchRadius,
+        std::span<uint64_t> forceWork) const;
     void ComputeForcesUsingCurrentGrid(std::vector<FluidParticle>& particles,
         std::span<const DensityJobBuffer> cachedRanges, JobSystem* pJobSystem);
+    void PlanForceRanges(std::size_t particleCount, std::span<const DensityJobBuffer> cachedRanges,
+        std::span<std::size_t> rangeEnds);
     ForceNeighborCounts ComputeForceRange(std::vector<FluidParticle>& particles,
         std::size_t rangeBegin, std::size_t rangeEnd,
         std::span<const DensityJobBuffer> cachedRanges) const noexcept;
@@ -139,6 +142,8 @@ private:
     // 各行の近傍はGridの走査順を維持し、位置を更新する前のForce計算だけで使用します。
     std::array<DensityJobBuffer, MaximumWorkerJobs + 1u> m_DensityBuffers;
     std::vector<NeighborForceTerms> m_NeighborForceTerms;
+    // Densityが粒子ごとの推定値を書き、Forceの範囲計画でその領域を累積値へ置き換えます。
+    std::vector<uint64_t> m_ForceWork;
     // 容量は再利用しますが、有効性はStepローカルなVerletStepStateだけで管理します。
     std::vector<math::Vec3> m_VerletReferencePositions;
     uint32_t m_LastSubstepCount = 0u;

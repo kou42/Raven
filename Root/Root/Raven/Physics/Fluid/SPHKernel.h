@@ -38,6 +38,13 @@ public:
     static float EvaluateViscosityLaplacian(float distance, float smoothingRadius);
 
 private:
+    friend class SPHSolver;
+
+    // Solver側で 0 < distance <= h を確認してから、共通の h - distance を渡します。
+    math::Vec3 EvaluateSpikyGradientInSupport(
+        const math::Vec3& displacement, float distance, float remainingRadius) const;
+    float EvaluateViscosityLaplacianInSupport(float remainingRadius) const;
+
     float m_SmoothingRadius;
     float m_SmoothingRadiusSq;
     float m_Poly6Coefficient = 0.0f;

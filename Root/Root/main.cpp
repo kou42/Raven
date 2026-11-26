@@ -87,7 +87,7 @@ namespace Raven::ph::tests { void RunFluidSPHSelfTests(); }
 
 namespace Raven::ph::tests
 {
-int RunFluidSPHBenchmark(bool compareCache, bool compareDensity, bool compareCellSizes, bool compareVerlet);
+int RunFluidSPHBenchmark(bool compareCache, bool compareDensity, bool compareCellSizes, bool compareVerlet, bool compareForce);
 }
 
 int main(int argc, char* argv[])
@@ -407,12 +407,14 @@ int main(int argc, char* argv[])
             || backendArgument == "--benchmark-fluid-sph-cache"
             || backendArgument == "--benchmark-fluid-sph-density"
             || backendArgument == "--benchmark-fluid-sph-grid"
-            || backendArgument == "--benchmark-fluid-sph-verlet")
+            || backendArgument == "--benchmark-fluid-sph-verlet"
+            || backendArgument == "--benchmark-fluid-sph-force")
         {
             return Raven::ph::tests::RunFluidSPHBenchmark(backendArgument == "--benchmark-fluid-sph-cache",
                 backendArgument == "--benchmark-fluid-sph-density",
                 backendArgument == "--benchmark-fluid-sph-grid",
-                backendArgument == "--benchmark-fluid-sph-verlet");
+                backendArgument == "--benchmark-fluid-sph-verlet",
+                backendArgument == "--benchmark-fluid-sph-force");
         }
         if (backendArgument == "--benchmark-astro-gravity")
         {
@@ -500,7 +502,7 @@ int main(int argc, char* argv[])
                 "--benchmark-containers, --benchmark-flat-hash-map, --benchmark-flat-hash-set, --benchmark-name, "
                 "--scene-dx12, --scene-vulkan, --scene-triangle-vulkan, "
                 "--clear-opengl, --clear-vulkan, --clear-dx12, --benchmark-fluid-sph, --benchmark-fluid-sph-cache, "
-                "--benchmark-fluid-sph-density, --benchmark-fluid-sph-grid, --benchmark-fluid-sph-verlet or --benchmark-astro-gravity.\\n";
+                "--benchmark-fluid-sph-density, --benchmark-fluid-sph-grid, --benchmark-fluid-sph-verlet, --benchmark-fluid-sph-force or --benchmark-astro-gravity.\\n";
             return 1;
         }
     }
