@@ -6,16 +6,33 @@ layout(std430, binding = 0) readonly buffer Parameters
     ivec4 origin;
     uvec4 dimensions;
     vec4 kernelParams;
+    vec4 dynamics;
+    vec4 gravityViscosity;
+    vec4 boundaryMin;
+    vec4 boundaryMax;
 };
 #ifndef RAVEN_SPH_CLEAR
-layout(std430, binding = 1) readonly buffer Particles { vec4 particles[]; };
+struct ParticleState
+{
+    vec4 positionMass;
+    vec4 velocity;
+};
+#ifdef RAVEN_SPH_INTEGRATE
+layout(std430, binding = 1) buffer Particles { ParticleState particles[]; };
+#else
+layout(std430, binding = 1) readonly buffer Particles { ParticleState particles[]; };
 #endif
-#ifdef RAVEN_SPH_DENSITY
+layout(std430, binding = 3) buffer Result { uint result[]; };
+#endif
+#ifndef RAVEN_SPH_INTEGRATE
+#if defined(RAVEN_SPH_DENSITY) || defined(RAVEN_SPH_FORCE)
 layout(std430, binding = 2) readonly buffer Grid { int links[]; };
 #else
 layout(std430, binding = 2) buffer Grid { int links[]; };
 #endif
-layout(std430, binding = 3) buffer Result { uint result[]; };
+#endif
+
+const float Epsilon = 1.0e-6;
 
 uint CellCount()
 {
@@ -23,19 +40,55 @@ uint CellCount()
 }
 
 #ifndef RAVEN_SPH_CLEAR
-ivec3 Cell(vec3 position)
-{
-    return ivec3(floor(position * kernelParams.x)) - origin.xyz;
-}
-
 bool Inside(ivec3 cell)
 {
     return all(greaterThanEqual(cell, ivec3(0))) && all(lessThan(cell, ivec3(dimensions.xyz)));
 }
 
+bool TryCell(vec3 position, out ivec3 cell)
+{
+    vec3 absoluteCell = floor(position * kernelParams.x);
+    if (!all(lessThanEqual(abs(absoluteCell), vec3(1000000.0))))
+    {
+        return false;
+    }
+    cell = ivec3(absoluteCell) - origin.xyz;
+    return Inside(cell);
+}
+
 uint Index(ivec3 cell)
 {
     return uint(cell.x) + dimensions.x * (uint(cell.y) + dimensions.y * uint(cell.z));
+}
+
+uint DynamicsOffset(uint particle)
+{
+    return 1u + dimensions.w + 4u * particle;
+}
+
+float EvaluatePressure(float density)
+{
+    return dynamics.y * (density - dynamics.x);
+}
+
+void ResolveBoundary(inout float position, inout float velocity, float low, float high)
+{
+    if (position < low)
+    {
+        position = low;
+        if (velocity < 0.0)
+        {
+            velocity = -velocity * boundaryMax.w;
+        }
+    }
+    else if (position > high)
+    {
+        position = high;
+        if (velocity > 0.0)
+        {
+            velocity = -velocity * boundaryMax.w;
+        }
+    }
 }
 #endif
 
@@ -47,56 +100,132 @@ void main()
     {
         links[particle] = -1;
     }
-    if (particle == 0u)
-    {
-        result[0] = 0u;
-    }
 #else
     if (particle >= dimensions.w)
     {
         return;
     }
-    vec3 position = particles[particle].xyz;
-    ivec3 center = Cell(position);
-#ifdef RAVEN_SPH_BUILD
-    // セル内には粒子ごとのリンクを使い、局所的な密集でも固定バケット容量を超えません。
-    if (Inside(center))
+    vec3 position = particles[particle].positionMass.xyz;
+#if defined(RAVEN_SPH_INTEGRATE)
+    vec3 velocity = particles[particle].velocity.xyz;
+    float mass = max(0.0, particles[particle].positionMass.w);
+    uint offset = DynamicsOffset(particle);
+    vec3 force = uintBitsToFloat(uvec3(result[offset], result[offset + 1u], result[offset + 2u]));
+    if (mass > Epsilon)
     {
-        links[CellCount() + particle] = atomicExchange(links[Index(center)], int(particle));
+        velocity += (force / mass) * dynamics.z;
+        position += velocity * dynamics.z;
     }
-    else
+    if (boundaryMin.w > 0.0)
+    {
+        ResolveBoundary(position.x, velocity.x, boundaryMin.x, boundaryMax.x);
+        ResolveBoundary(position.y, velocity.y, boundaryMin.y, boundaryMax.y);
+        ResolveBoundary(position.z, velocity.z, boundaryMin.z, boundaryMax.z);
+    }
+    ivec3 nextCell;
+    if (!TryCell(position, nextCell) || any(isnan(velocity)) || any(isinf(velocity)))
+    {
+        atomicOr(result[0], 4u);
+        return;
+    }
+    particles[particle].positionMass.xyz = position;
+    particles[particle].velocity.xyz = velocity;
+#else
+    ivec3 center;
+    if (!TryCell(position, center))
     {
         atomicOr(result[0], 1u);
+        return;
     }
+#ifdef RAVEN_SPH_BUILD
+    // セル内には粒子ごとのリンクを使い、局所的な密集でも固定バケット容量を超えません。
+    links[CellCount() + particle] = atomicExchange(links[Index(center)], int(particle));
+#else
+#ifdef RAVEN_SPH_FORCE
+    float density = uintBitsToFloat(result[particle + 1u]);
+    float pressure = EvaluatePressure(density);
+    float mass = max(0.0, particles[particle].positionMass.w);
+    vec3 force = gravityViscosity.xyz * mass;
+    vec3 velocity = particles[particle].velocity.xyz;
+    bool hasInteractions = mass > Epsilon && density > Epsilon;
+    float ownPressureTerm = hasInteractions ? pressure / (density * density) : 0.0;
 #else
     float density = 0.0;
+    const bool hasInteractions = true;
+#endif
     // セル幅は2hなので、隣接する27セルの外にはh以内の粒子はありません。
-    for (int z = -1; z <= 1; ++z)
-    for (int y = -1; y <= 1; ++y)
-    for (int x = -1; x <= 1; ++x)
+    if (hasInteractions)
     {
-        ivec3 cell = center + ivec3(x, y, z);
-        if (!Inside(cell))
+        for (int z = -1; z <= 1; ++z)
+        for (int y = -1; y <= 1; ++y)
+        for (int x = -1; x <= 1; ++x)
         {
-            continue;
-        }
-        for (int neighbor = links[Index(cell)]; neighbor >= 0; neighbor = links[CellCount() + uint(neighbor)])
-        {
-            vec4 sampleParticle = particles[neighbor];
-            vec3 displacement = position - sampleParticle.xyz;
-            float rSquared = dot(displacement, displacement);
-            if (rSquared <= kernelParams.y)
+            ivec3 cell = center + ivec3(x, y, z);
+            if (!Inside(cell))
             {
-                float gap = kernelParams.y - rSquared;
-                density += max(0.0, sampleParticle.w) * (kernelParams.z * gap * gap * gap);
+                continue;
+            }
+            for (int neighbor = links[Index(cell)]; neighbor >= 0; neighbor = links[CellCount() + uint(neighbor)])
+            {
+                vec4 sampleParticle = particles[neighbor].positionMass;
+                vec3 displacement = position - sampleParticle.xyz;
+                float rSquared = dot(displacement, displacement);
+#ifdef RAVEN_SPH_FORCE
+                if (uint(neighbor) == particle || rSquared <= Epsilon * Epsilon || rSquared > kernelParams.y)
+                {
+                    continue;
+                }
+                float neighborMass = max(0.0, sampleParticle.w);
+                float neighborDensity = uintBitsToFloat(result[uint(neighbor) + 1u]);
+                if (neighborMass <= Epsilon || neighborDensity <= Epsilon)
+                {
+                    continue;
+                }
+                float distance = sqrt(rSquared);
+                if (distance > kernelParams.w)
+                {
+                    continue;
+                }
+                float gap = kernelParams.w - distance;
+                if (distance > Epsilon)
+                {
+                    float neighborPressureTerm = EvaluatePressure(neighborDensity) / (neighborDensity * neighborDensity);
+                    force += (displacement * (dynamics.w * gap * gap / distance))
+                        * (-mass * neighborMass * (ownPressureTerm + neighborPressureTerm));
+                }
+                if (gravityViscosity.w > 0.0)
+                {
+                    force += (particles[neighbor].velocity.xyz - velocity)
+                        * (mass * gravityViscosity.w * neighborMass * (1.0 / neighborDensity) * (-dynamics.w * gap));
+                }
+#else
+                if (rSquared <= kernelParams.y)
+                {
+                    float gap = kernelParams.y - rSquared;
+                    density += max(0.0, sampleParticle.w) * (kernelParams.z * gap * gap * gap);
+                }
+#endif
             }
         }
     }
+#ifdef RAVEN_SPH_FORCE
+    if (isnan(pressure) || isinf(pressure) || any(isnan(force)) || any(isinf(force)))
+    {
+        atomicOr(result[0], 8u);
+    }
+    uint offset = DynamicsOffset(particle);
+    result[offset] = floatBitsToUint(force.x);
+    result[offset + 1u] = floatBitsToUint(force.y);
+    result[offset + 2u] = floatBitsToUint(force.z);
+    result[offset + 3u] = floatBitsToUint(pressure);
+#else
     if (isnan(density) || isinf(density))
     {
         atomicOr(result[0], 2u);
     }
     result[particle + 1u] = floatBitsToUint(density);
+#endif
+#endif
 #endif
 #endif
 }

@@ -385,7 +385,7 @@ Debug／Releaseビルド、Debugの `--test-fluid-sph` と `--test-physics-colli
 ## Phase 9 — GPU SPH（将来）
 
 - [x] Raven RHI の Compute / Storage Buffer / Barrier 対応状況を調査する。
-- [ ] GPU Grid Build → Density → Force → Integration を段階的に実装する。
+- [x] OpenGLでGPU Grid Build → Density → Force → Integrationの固定刻み経路を実装する。
 - [ ] GPU 上に粒子を常駐させ、CPU readback を最小化する。
 - [ ] CPU 版を参照実装・フォールバックとして維持する。
 
@@ -419,6 +419,21 @@ Windows x64 Release、NVIDIA GeForce RTX 3080のOpenGLで照合しました。1�
 | 均一 | 5,120 | 3.35398 | 0.23634 | 0.000244 | 2.83e-7 |
 
 正規化誤差は `abs(GPU - CPU) / max(1, abs(CPU))` で、許容値は2e-4です。空入力はディスパッチと読み戻しが0回でした。非空の各条件は測定後に1回だけ読み戻し、予算超過ではGPUの結果を要求せず、CPU参照経路で計算できることを確認しました。Debug／Releaseビルド、CPUの `--test-fluid-sph`、OpenGLの `--test-gpu-sph` と既存の `--test-gpu-sdf-fluid` が成功しました。GPU Force・積分と描画まで含めた時間は今後の検証です。
+
+### 固定刻みのForce・積分
+
+`GPUSPH::PrepareFixedStep` で固定 dt を指定します。各 `DispatchFixedStep` はセル初期化、Grid Build、Density、Pressureを含むForce、積分とBox境界処理の5パスを実行します。Forceパスは全粒子の位置・速度・Densityを読み、粒子ごとのForceとPressureを別領域に書きます。Storage Barrierの後に積分がそれらを読み、位置・速度を同じGPUバッファへ反映します。無効Massは積分を省き、境界補正は適用します。
+
+GPUバッファは連続するSubstepで再利用します。グリッドは初期粒子と有効なBox境界を覆う範囲です。境界無効などで粒子がグリッドから外れた場合や、途中で非有限値が出た場合はエラービットを準備し直すまで保持し、取得結果を拒否します。CPU Solverへの切り替えは呼び出し側が元の状態から行います。
+
+Windows x64 Release、RTX 3080のOpenGLで `--test-gpu-sph` を実行しました。1,024粒子を同じ固定 dt 0.0005秒で進め、1回または12回の後に状態と計算結果を各1回読み戻しました。連続Substep中の再確保・読み戻しは0回です。GPU時間は5パスを含み、シェーダー準備、アップロード、読み戻しを除きます。CPUは直列 `SPHSolver::Step` です。
+
+| Substep数 | CPU ms / Substep | GPU ms / Substep | Density誤差 | Pressure誤差 | Force誤差 | 位置誤差 | 速度誤差 |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 1.02790 | 0.43315 | 2.83e-7 | 2.54e-7 | 1.49e-4 | 7.45e-9 | 3.58e-7 |
+| 12 | 0.76562 | 0.41941 | 4.91e-7 | 4.88e-7 | 2.21e-4 | 5.96e-8 | 5.78e-6 |
+
+誤差は成分ごとの `abs(GPU - CPU) / max(scale, abs(CPU))` の最大値です。PressureはEOSに合わせて `scale = RestDensity * PressureStiffness`、他は1としました。許容値はDensity 2e-4、Pressure 2e-6、Force 2e-3、位置と速度は5e-4です。同じテストで境界反射、負Mass、グリッド外移動時の結果拒否も確認しました。Debug／Releaseビルド、CPU SPH、GPU SPH、既存GPU Grid Fluid / SDFのテストが通りました。可変CFL、描画連携、DirectX 12／Vulkan、GPU失敗時の自動復旧は後続の範囲です。
 
 ## 3. ベンチマーク計画
 

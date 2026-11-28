@@ -18,6 +18,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <thread>
 
 namespace Raven::ph
@@ -420,6 +421,182 @@ bool VerifyThermalVelocity(const Ref<RHIComputeCommandEncoder>& encoder, const D
         std::abs(result[hotCell + 1] - 20.0) < 1.0e-4 && energyError < 1.0e-9;
 }
 
+bool ReadSPHBuffer(const Ref<RHIComputeReadback>& ticket, std::vector<std::byte>& bytes)
+{
+    if (ticket == nullptr)
+    {
+        return false;
+    }
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    auto status = ticket->Poll(bytes);
+    while (status == RHIComputeReadbackStatus::Pending && std::chrono::steady_clock::now() < deadline)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        status = ticket->Poll(bytes);
+    }
+    return status == RHIComputeReadbackStatus::Ready;
+}
+
+bool VerifySPHFixedSteps(const Ref<RHIComputeCommandEncoder>& encoder, const RHIComputeCapabilities& capabilities,
+    const std::string& source)
+{
+    SPHSettings settings;
+    settings.StableTimeStepEnabled = false;
+    settings.BoundaryEnabled = true;
+    settings.BoundaryRestitution = 0.5f;
+    constexpr float dt = 0.0005f;
+    SPHSolver cpu(settings);
+    GPUSPH gpu;
+
+    std::vector<FluidParticle> initial(1024u);
+    for (std::size_t index = 0u; index < initial.size(); ++index)
+    {
+        initial[index].Position = {static_cast<float>(index % 12u) * 0.065f - 0.4f,
+            static_cast<float>((index / 12u) % 12u) * 0.065f - 0.4f,
+            static_cast<float>(index / 144u) * 0.065f - 0.4f};
+        initial[index].Velocity.y = static_cast<float>(index % 5u) * 0.04f;
+        initial[index].Mass = 0.25f;
+    }
+    initial[0].Position = {0.979f, 0.0f, 0.0f};
+    initial[0].Velocity.x = 5.0f;
+    initial[1].Position = {1.1f, 0.0f, 0.0f};
+    initial[1].Velocity.x = 1.0f;
+    initial[1].Mass = -1.0f;
+
+    using Result = GPUSPH::PrepareResult;
+    for (const std::size_t stepCount : {1u, 12u})
+    {
+        if (Check(gpu.PrepareFixedStep(encoder, capabilities, initial, settings, dt, source)
+            == Result::Ready, "SPH fixed step prepare") == false)
+        {
+            return false;
+        }
+        const auto prior = encoder->GetStatistics();
+        const auto uploadCount = prior.Buffers;
+        std::vector<Ref<RHIComputeTimestamp>> timestamps(stepCount);
+        const auto gpuStart = std::chrono::steady_clock::now();
+        for (auto& timestamp : timestamps)
+        {
+            if (Check(gpu.DispatchFixedStep(timestamp), "SPH fixed step dispatch") == false)
+            {
+                return false;
+            }
+        }
+        glFinish();
+        const double wallMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - gpuStart).count() / stepCount;
+        const auto after = encoder->GetStatistics();
+        if (Check(after.Dispatches == prior.Dispatches + stepCount * 5u
+            && after.Buffers == uploadCount && after.Readbacks == prior.Readbacks,
+            "SPH resident dispatches") == false)
+        {
+            return false;
+        }
+        const auto tickets = gpu.RequestStepReadback();
+        std::vector<std::byte> stateBytes;
+        std::vector<std::byte> dynamicsBytes;
+        std::vector<FluidParticle> actual(initial.size());
+        if (Check(ReadSPHBuffer(tickets.m_Particles, stateBytes) && ReadSPHBuffer(tickets.m_Dynamics, dynamicsBytes)
+            && GPUSPH::DecodeStep(stateBytes, dynamicsBytes, actual)
+            && encoder->GetStatistics().Readbacks == prior.Readbacks + 2u, "SPH final state readback") == false)
+        {
+            return false;
+        }
+
+        auto expected = initial;
+        const auto cpuStart = std::chrono::steady_clock::now();
+        for (std::size_t index = 0u; index < stepCount; ++index)
+        {
+            cpu.Step(expected, dt);
+        }
+        const double cpuMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - cpuStart).count() / stepCount;
+        double gpuNs = 0.0;
+        bool hasTimestamps = true;
+        for (const auto& timestamp : timestamps)
+        {
+            double value = 0.0;
+            if (timestamp == nullptr || timestamp->Poll(value) != RHIComputeReadbackStatus::Ready)
+            {
+                hasTimestamps = false;
+                break;
+            }
+            gpuNs += value;
+        }
+        const double gpuMs = hasTimestamps ? gpuNs / (1.0e6 * stepCount) : wallMs;
+
+        std::array<float, 5> maxErrors{};
+        const auto error = [](float value, float reference, float scale = 1.0f)
+        {
+            return std::isfinite(value) && std::isfinite(reference) ? std::abs(value - reference) / std::max(scale, std::abs(reference))
+                : std::numeric_limits<float>::infinity();
+        };
+        const auto vectorError = [&](const Vec3& value, const Vec3& reference)
+        {
+            return std::max({error(value.x, reference.x), error(value.y, reference.y), error(value.z, reference.z)});
+        };
+        // EOSの静止密度に相当する圧力スケールで比較し、ゼロ付近の除算による増幅を避けます。
+        const float pressureScale = settings.RestDensity * settings.PressureStiffness;
+        bool hasMatchedStates = true;
+        for (std::size_t index = 0u; index < actual.size(); ++index)
+        {
+            const auto& current = actual[index];
+            const auto& reference = expected[index];
+            const std::array errors{error(current.Density, reference.Density),
+                error(current.Pressure, reference.Pressure, pressureScale),
+                vectorError(current.Force, reference.Force), vectorError(current.Position, reference.Position),
+                vectorError(current.Velocity, reference.Velocity)};
+            constexpr std::array tolerances{2.0e-4f, 2.0e-6f, 2.0e-3f, 5.0e-4f, 5.0e-4f};
+            for (std::size_t field = 0u; field < errors.size(); ++field)
+            {
+                if (errors[field] > tolerances[field] || current.Mass != reference.Mass)
+                {
+                    if (hasMatchedStates == true)
+                    {
+                        std::cerr << "SPH substeps=" << stepCount << " particle=" << index
+                            << " field=" << field << " normalized_error=" << errors[field] << '\n';
+                    }
+                    hasMatchedStates = false;
+                }
+                maxErrors[field] = std::max(maxErrors[field], errors[field]);
+            }
+        }
+        if (Check(actual[0].Velocity.x < 0.0f && actual[1].Position.x == expected[1].Position.x
+            && actual[1].Velocity.x == -0.5f, "SPH reflected and invalid-mass particles") == false)
+        {
+            return false;
+        }
+        std::cout << "fixed_steps=" << stepCount << ", cpu_ms=" << cpuMs << ", gpu_ms=" << gpuMs
+            << ", gpu_timer=" << (hasTimestamps ? "timestamp" : "wall")
+            << ", density_error=" << maxErrors[0] << ", pressure_error=" << maxErrors[1]
+            << ", force_error=" << maxErrors[2] << ", position_error=" << maxErrors[3]
+            << ", velocity_error=" << maxErrors[4] << ", readbacks=2\n";
+        if (Check(hasMatchedStates, "SPH reference comparison") == false)
+        {
+            return false;
+        }
+    }
+
+    settings.BoundaryEnabled = false;
+    std::vector<FluidParticle> escaping(1u);
+    escaping[0].Velocity.x = 1000.0f;
+    if (Check(gpu.PrepareFixedStep(encoder, capabilities, escaping, settings, dt, source) == Result::Ready,
+        "SPH escape prepare") == false)
+    {
+        return false;
+    }
+    Ref<RHIComputeTimestamp> timestamp;
+    if (Check(gpu.DispatchFixedStep(timestamp), "SPH escape dispatch") == false)
+    {
+        return false;
+    }
+    const auto tickets = gpu.RequestStepReadback();
+    std::vector<std::byte> state;
+    std::vector<std::byte> dynamics;
+    return Check(ReadSPHBuffer(tickets.m_Particles, state) && ReadSPHBuffer(tickets.m_Dynamics, dynamics)
+        && GPUSPH::DecodeStep(state, dynamics, escaping) == false, "SPH grid escape rejected");
+}
+
 bool VerifySPHDensity()
 {
     OpenGLRHIDevice device;
@@ -581,7 +758,8 @@ bool VerifySPHDensity()
     }
     cpu.ComputeDensity(overCapacity);
     return Check(std::isfinite(overCapacity[0].Density) && overCapacity[0].Density > 0.0f
-        && overCapacity[0].Density == overCapacity[1].Density, "SPH CPU fallback");
+        && overCapacity[0].Density == overCapacity[1].Density, "SPH CPU fallback")
+        && VerifySPHFixedSteps(encoder, capabilities, source);
 }
 
 bool Run(GLFWwindow& window, bool verify)
@@ -667,7 +845,7 @@ int RunGPUSPHVerification()
     glfwTerminate();
     if (successful == true)
     {
-        std::cout << "[PASS] GPU SPH Density verification\n";
+        std::cout << "[PASS] GPU SPH Density / fixed step verification\n";
     }
     return successful ? 0 : 1;
 }
