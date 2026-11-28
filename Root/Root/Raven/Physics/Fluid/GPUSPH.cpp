@@ -1,6 +1,7 @@
 #include "Raven/Physics/Fluid/GPUSPH.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -14,6 +15,19 @@ namespace
 constexpr uint32_t GroupSize = 64u;
 constexpr uint32_t MaximumCells = 1024u * 1024u;
 constexpr std::size_t DynamicsWordsPerParticle = 5u;
+constexpr uint32_t MaximumAdaptiveSubsteps = 64u;
+struct TimeControl
+{
+    float m_RemainingTime;
+    float m_SelectedDt;
+    float m_MinimumDt;
+    uint32_t m_Substeps;
+    uint32_t m_LimitReached;
+    uint32_t m_MaxSpeedBits;
+    uint32_t m_MaxAccelerationBits;
+    uint32_t m_Reserved;
+};
+static_assert(sizeof(TimeControl) == 32u);
 struct ParticleWord
 {
     std::array<float, 4> m_PositionMass;
@@ -33,8 +47,9 @@ struct Parameters
     std::array<float, 4> m_GravityViscosity;
     std::array<float, 4> m_BoundaryMin;
     std::array<float, 4> m_BoundaryMax;
+    std::array<float, 4> m_Cfl;
 };
-static_assert(sizeof(Parameters) == 112u);
+static_assert(sizeof(Parameters) == 128u);
 
 uint32_t GroupCount(uint32_t count)
 {
@@ -65,11 +80,29 @@ GPUSPH::PrepareResult GPUSPH::PrepareFixedStep(const Ref<RHIComputeCommandEncode
     return PrepareInternal(encoder, capabilities, particles, settings, deltaTime, shaderSource);
 }
 
+GPUSPH::PrepareResult GPUSPH::PrepareAdaptiveFrame(const Ref<RHIComputeCommandEncoder>& encoder,
+    const RHIComputeCapabilities& capabilities, std::span<const FluidParticle> particles,
+    const SPHSettings& settings, float frameDeltaTime, const std::string& shaderSource)
+{
+    if (settings.StableTimeStepEnabled == false || std::isfinite(frameDeltaTime) == false || frameDeltaTime <= 0.0f
+        || settings.MaximumSubsteps > MaximumAdaptiveSubsteps)
+    {
+        m_IsReady = false;
+        m_HasDensity = false;
+        m_HasStep = false;
+        return PrepareResult::Failed;
+    }
+    return PrepareInternal(encoder, capabilities, particles, settings, frameDeltaTime, shaderSource,
+        std::max(1u, settings.MaximumSubsteps));
+}
+
 GPUSPH::PrepareResult GPUSPH::PrepareInternal(const Ref<RHIComputeCommandEncoder>& encoder,
     const RHIComputeCapabilities& capabilities, std::span<const FluidParticle> particles,
-    const SPHSettings& settings, float deltaTime, const std::string& shaderSource)
+    const SPHSettings& settings, float deltaTime, const std::string& shaderSource,
+    uint32_t adaptiveSubsteps)
 {
     const float smoothingRadius = settings.SmoothingRadius;
+    m_AdaptiveSubsteps = adaptiveSubsteps;
     m_CanAdvance = deltaTime > 0.0f;
     m_HasStep = false;
     m_IsReady = false;
@@ -79,7 +112,7 @@ GPUSPH::PrepareResult GPUSPH::PrepareInternal(const Ref<RHIComputeCommandEncoder
     m_Encoder = encoder;
     m_ParticleCount = 0u;
     m_CellCount = 0u;
-    if (encoder == nullptr || capabilities.Supported == false || capabilities.MaxStorageBufferSlots < 4u
+    if (encoder == nullptr || capabilities.Supported == false || capabilities.MaxStorageBufferSlots < (adaptiveSubsteps > 0u ? 5u : 4u)
         || capabilities.MaxLocalSize[0] < GroupSize || capabilities.MaxInvocations < GroupSize)
     {
         return PrepareResult::Unsupported;
@@ -199,6 +232,10 @@ GPUSPH::PrepareResult GPUSPH::PrepareInternal(const Ref<RHIComputeCommandEncoder
     {
         return PrepareResult::CapacityExceeded;
     }
+    parameters.m_Origin[3] = static_cast<int32_t>(adaptiveSubsteps);
+    parameters.m_Cfl = {std::max(0.0f, settings.CFLFactor), std::max(0.0f, settings.AccelerationTimeStepFactor),
+        std::max(0.0f, settings.MinimumTimeStep), std::sqrt(std::max(0.0f, settings.PressureStiffness))
+            * std::max(0.0f, settings.SpeedOfSoundScale)};
     parameters.m_Dimensions[3] = particleCount;
     parameters.m_Kernel = {inverseCellSize, hSquared, poly6, smoothingRadius};
 
@@ -209,27 +246,40 @@ GPUSPH::PrepareResult GPUSPH::PrepareInternal(const Ref<RHIComputeCommandEncoder
     const RHIComputeBindingLayout gridRead{2u, Type::StorageBuffer, Access::Read};
     const RHIComputeBindingLayout gridWrite{2u, Type::StorageBuffer, Access::ReadWrite};
     const RHIComputeBindingLayout resultWrite{3u, Type::StorageBuffer, Access::ReadWrite};
-    const std::array<std::vector<RHIComputeBindingLayout>, 5> layouts{{
+    const RHIComputeBindingLayout controlWrite{4u, Type::StorageBuffer, Access::ReadWrite};
+    const std::array<std::vector<RHIComputeBindingLayout>, 8> layouts{{
         {parameterLayout, gridWrite},
         {parameterLayout, particleLayout, gridWrite, resultWrite},
         {parameterLayout, particleLayout, gridRead, resultWrite},
         {parameterLayout, particleLayout, gridRead, resultWrite},
-        {parameterLayout, {1u, Type::StorageBuffer, Access::ReadWrite}, resultWrite}
+        {parameterLayout, {1u, Type::StorageBuffer, Access::ReadWrite}, resultWrite},
+        {parameterLayout, controlWrite},
+        {parameterLayout, particleLayout, resultWrite, controlWrite},
+        {parameterLayout, controlWrite}
     }};
     constexpr std::array passes{"#define RAVEN_SPH_CLEAR\n", "#define RAVEN_SPH_BUILD\n", "#define RAVEN_SPH_DENSITY\n",
-        "#define RAVEN_SPH_FORCE\n", "#define RAVEN_SPH_INTEGRATE\n"};
+        "#define RAVEN_SPH_FORCE\n", "#define RAVEN_SPH_INTEGRATE\n", "#define RAVEN_SPH_CFL_BEGIN\n",
+        "#define RAVEN_SPH_CFL_REDUCE\n", "#define RAVEN_SPH_CFL_CHOOSE\n"};
     const auto versionEnd = shaderSource.find('\n');
     if (versionEnd == std::string::npos)
     {
         return PrepareResult::Failed;
     }
-    for (std::size_t index = 0; index < (m_CanAdvance ? passes.size() : 3u); ++index)
+    for (std::size_t index = 0; index < (adaptiveSubsteps > 0u ? passes.size() : (m_CanAdvance ? 5u : 3u)); ++index)
     {
         RHIComputePipelineSpecification spec;
         spec.OpenGLSource = shaderSource;
         spec.OpenGLSource.insert(versionEnd + 1u, passes[index]);
         spec.LocalSize = {GroupSize, 1u, 1u};
         spec.Layout = layouts[index];
+        if (adaptiveSubsteps > 0u)
+        {
+            spec.OpenGLSource.insert(versionEnd + 1u, "#define RAVEN_SPH_ADAPTIVE\n");
+            if (index < 5u)
+            {
+                spec.Layout.push_back({4u, Type::StorageBuffer, Access::Read});
+            }
+        }
         m_Pipelines[index] = encoder->CreatePipeline(spec);
         if (m_Pipelines[index] == nullptr)
         {
@@ -246,11 +296,25 @@ GPUSPH::PrepareResult GPUSPH::PrepareInternal(const Ref<RHIComputeCommandEncoder
     }
     // 状態ワードを準備時にだけ初期化し、複数Substepのうち一度でも起きたGPUエラーを残します。
     std::vector<uint32_t> result(resultWords, 0u);
+    if (adaptiveSubsteps > 0u)
+    {
+        // 最初のCFLはCPU版と同じく、呼び出し側が渡したForceとVelocityから始めます。
+        for (std::size_t index = 0u; index < particles.size(); ++index)
+        {
+            const std::size_t offset = 1u + particles.size() + 4u * index;
+            result[offset] = std::bit_cast<uint32_t>(particles[index].Force.x);
+            result[offset + 1u] = std::bit_cast<uint32_t>(particles[index].Force.y);
+            result[offset + 2u] = std::bit_cast<uint32_t>(particles[index].Force.z);
+            result[offset + 3u] = std::bit_cast<uint32_t>(particles[index].Pressure);
+            result[index + 1u] = std::bit_cast<uint32_t>(particles[index].Density);
+        }
+    }
     m_Resources = {encoder->CreateStorageBuffer(sizeof(parameters), &parameters),
         encoder->CreateStorageBuffer(words.size() * sizeof(ParticleWord), words.data()),
         encoder->CreateStorageBuffer(gridBytes, nullptr),
-        encoder->CreateStorageBuffer(result.size() * sizeof(uint32_t), result.data())};
-    m_IsReady = std::all_of(m_Resources.begin(), m_Resources.end(), [](const auto& buffer)
+        encoder->CreateStorageBuffer(result.size() * sizeof(uint32_t), result.data()),
+        adaptiveSubsteps > 0u ? encoder->CreateStorageBuffer(sizeof(TimeControl), nullptr) : nullptr};
+    m_IsReady = std::all_of(m_Resources.begin(), m_Resources.begin() + (adaptiveSubsteps > 0u ? 5u : 4u), [](const auto& buffer)
     {
         return buffer != nullptr;
     });
@@ -282,7 +346,7 @@ bool GPUSPH::Dispatch(bool advancesParticles, Ref<RHIComputeTimestamp>* pTimesta
     }
     m_HasStep = false;
     m_HasDensity = false;
-    if (m_IsReady == false || (advancesParticles && m_CanAdvance == false))
+    if (m_IsReady == false || m_AdaptiveSubsteps > 0u || (advancesParticles && m_CanAdvance == false))
     {
         return false;
     }
@@ -292,31 +356,106 @@ bool GPUSPH::Dispatch(bool advancesParticles, Ref<RHIComputeTimestamp>* pTimesta
     }
     const auto record = [this, advancesParticles](RHIComputeCommandEncoder& encoder)
     {
-        const std::array<RHIComputeBinding, 2> clear{{{0u, m_Resources[0]}, {2u, m_Resources[2]}}};
-        const std::array<RHIComputeBinding, 4> particle{{{0u, m_Resources[0]}, {1u, m_Resources[1]},
-            {2u, m_Resources[2]}, {3u, m_Resources[3]}}};
-        const RHIComputeExtent particleGroups{GroupCount(m_ParticleCount), 1u, 1u};
-        const bool hasDensity = encoder.Dispatch(m_Pipelines[0], clear, {GroupCount(m_CellCount), 1u, 1u})
-            && encoder.Barrier(RHIComputeConsumer::Storage)
-            && encoder.Dispatch(m_Pipelines[1], particle, particleGroups)
-            && encoder.Barrier(RHIComputeConsumer::Storage)
-            && encoder.Dispatch(m_Pipelines[2], particle, particleGroups)
-            && encoder.Barrier(RHIComputeConsumer::Storage);
-        if (hasDensity == false || advancesParticles == false)
-        {
-            return hasDensity;
-        }
-        // Force参照中の位置・速度を保つため、全Forceを書き終えてから積分します。
-        const std::array<RHIComputeBinding, 3> integrate{{{0u, m_Resources[0]},
-            {1u, m_Resources[1]}, {3u, m_Resources[3]}}};
-        return encoder.Dispatch(m_Pipelines[3], particle, particleGroups)
-            && encoder.Barrier(RHIComputeConsumer::Storage)
-            && encoder.Dispatch(m_Pipelines[4], integrate, particleGroups)
-            && encoder.Barrier(RHIComputeConsumer::Storage);
+        return RecordParticlePasses(encoder, advancesParticles);
     };
     m_HasDensity = pTimestamp != nullptr ? m_Encoder->MeasureGpuWork(record, *pTimestamp) : record(*m_Encoder);
     m_HasStep = m_HasDensity && advancesParticles;
     return m_HasDensity;
+}
+
+bool GPUSPH::RecordParticlePasses(RHIComputeCommandEncoder& encoder, bool advancesParticles) const
+{
+    const bool isAdaptive = m_AdaptiveSubsteps > 0u;
+    const RHIComputeBinding control{4u, m_Resources[4]};
+    const std::array<RHIComputeBinding, 3> clear{{{0u, m_Resources[0]}, {2u, m_Resources[2]}, control}};
+    const std::array<RHIComputeBinding, 5> particle{{{0u, m_Resources[0]}, {1u, m_Resources[1]},
+        {2u, m_Resources[2]}, {3u, m_Resources[3]}, control}};
+    const RHIComputeExtent particleGroups{GroupCount(m_ParticleCount), 1u, 1u};
+    const auto clearBindings = std::span(clear).first(isAdaptive ? 3u : 2u);
+    const auto particleBindings = std::span(particle).first(isAdaptive ? 5u : 4u);
+    const bool hasDensity = encoder.Dispatch(m_Pipelines[0], clearBindings, {GroupCount(m_CellCount), 1u, 1u})
+        && encoder.Barrier(RHIComputeConsumer::Storage)
+        && encoder.Dispatch(m_Pipelines[1], particleBindings, particleGroups)
+        && encoder.Barrier(RHIComputeConsumer::Storage)
+        && encoder.Dispatch(m_Pipelines[2], particleBindings, particleGroups)
+        && encoder.Barrier(RHIComputeConsumer::Storage);
+    if (hasDensity == false || advancesParticles == false)
+    {
+        return hasDensity;
+    }
+    // Force参照中の位置・速度を保つため、全Forceを書き終えてから積分します。
+    const std::array<RHIComputeBinding, 4> integrate{{{0u, m_Resources[0]},
+        {1u, m_Resources[1]}, {3u, m_Resources[3]}, control}};
+    return encoder.Dispatch(m_Pipelines[3], particleBindings, particleGroups)
+        && encoder.Barrier(RHIComputeConsumer::Storage)
+        && encoder.Dispatch(m_Pipelines[4], std::span(integrate).first(isAdaptive ? 4u : 3u), particleGroups)
+        && encoder.Barrier(RHIComputeConsumer::Storage);
+}
+
+bool GPUSPH::DispatchAdaptiveFrame(Ref<RHIComputeTimestamp>& timestamp)
+{
+    timestamp.reset();
+    m_HasStep = false;
+    m_HasDensity = false;
+    if (m_IsReady == false || m_AdaptiveSubsteps == 0u)
+    {
+        return false;
+    }
+    if (m_ParticleCount == 0u)
+    {
+        return true;
+    }
+    m_HasStep = m_Encoder->MeasureGpuWork([this](RHIComputeCommandEncoder& encoder)
+    {
+        const RHIComputeExtent singleGroup{1u, 1u, 1u};
+        const RHIComputeExtent particleGroups{GroupCount(m_ParticleCount), 1u, 1u};
+        const RHIComputeBinding control{4u, m_Resources[4]};
+        const std::array<RHIComputeBinding, 2> timeOnly{{{0u, m_Resources[0]}, control}};
+        const std::array<RHIComputeBinding, 4> motion{{{0u, m_Resources[0]}, {1u, m_Resources[1]},
+            {3u, m_Resources[3]}, control}};
+        if (encoder.Dispatch(m_Pipelines[5], timeOnly, singleGroup) == false
+            || encoder.Barrier(RHIComputeConsumer::Storage) == false)
+        {
+            return false;
+        }
+        // CPUは上限回数を発行し、残り時間がないスロットはGPU側で何も更新しません。
+        for (uint32_t slot = 0u; slot < m_AdaptiveSubsteps; ++slot)
+        {
+            if (encoder.Dispatch(m_Pipelines[6], motion, particleGroups) == false
+                || encoder.Barrier(RHIComputeConsumer::Storage) == false
+                || encoder.Dispatch(m_Pipelines[7], timeOnly, singleGroup) == false
+                || encoder.Barrier(RHIComputeConsumer::Storage) == false
+                || RecordParticlePasses(encoder, true) == false)
+            {
+                return false;
+            }
+        }
+        return true;
+    }, timestamp);
+    m_HasDensity = m_HasStep;
+    return m_HasStep;
+}
+
+Ref<RHIComputeReadback> GPUSPH::RequestAdaptiveStatistics()
+{
+    if (m_HasStep == false || m_AdaptiveSubsteps == 0u
+        || m_Encoder->Barrier(RHIComputeConsumer::BufferReadback) == false)
+    {
+        return {};
+    }
+    return m_Encoder->RequestBufferReadback(m_Resources[4], 0u, sizeof(TimeControl));
+}
+
+bool GPUSPH::DecodeAdaptiveStatistics(std::span<const std::byte> bytes, AdaptiveStatistics& statistics)
+{
+    if (bytes.size() != sizeof(TimeControl))
+    {
+        return false;
+    }
+    TimeControl control{};
+    std::memcpy(&control, bytes.data(), sizeof(control));
+    statistics = {control.m_Substeps, control.m_MinimumDt, control.m_LimitReached != 0u};
+    return true;
 }
 
 Ref<RHIComputeResource> GPUSPH::GetParticleBuffer() const

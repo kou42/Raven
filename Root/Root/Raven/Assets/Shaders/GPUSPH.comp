@@ -10,8 +10,9 @@ layout(std430, binding = 0) readonly buffer Parameters
     vec4 gravityViscosity;
     vec4 boundaryMin;
     vec4 boundaryMax;
+    vec4 cfl;
 };
-#ifndef RAVEN_SPH_CLEAR
+#if !defined(RAVEN_SPH_CLEAR) && !defined(RAVEN_SPH_CFL_BEGIN) && !defined(RAVEN_SPH_CFL_CHOOSE)
 struct ParticleState
 {
     vec4 positionMass;
@@ -24,12 +25,30 @@ layout(std430, binding = 1) readonly buffer Particles { ParticleState particles[
 #endif
 layout(std430, binding = 3) buffer Result { uint result[]; };
 #endif
-#ifndef RAVEN_SPH_INTEGRATE
+#if !defined(RAVEN_SPH_INTEGRATE) && !defined(RAVEN_SPH_CFL_BEGIN) && !defined(RAVEN_SPH_CFL_REDUCE) && !defined(RAVEN_SPH_CFL_CHOOSE)
 #if defined(RAVEN_SPH_DENSITY) || defined(RAVEN_SPH_FORCE)
 layout(std430, binding = 2) readonly buffer Grid { int links[]; };
 #else
 layout(std430, binding = 2) buffer Grid { int links[]; };
 #endif
+#endif
+
+#ifdef RAVEN_SPH_ADAPTIVE
+#if defined(RAVEN_SPH_CFL_BEGIN) || defined(RAVEN_SPH_CFL_REDUCE) || defined(RAVEN_SPH_CFL_CHOOSE)
+layout(std430, binding = 4) buffer TimeControl
+#else
+layout(std430, binding = 4) readonly buffer TimeControl
+#endif
+{
+    float remainingTime;
+    float selectedDt;
+    float minimumDt;
+    uint substeps;
+    uint limitReached;
+    uint maxSpeedBits;
+    uint maxAccelerationBits;
+    uint reserved;
+};
 #endif
 
 const float Epsilon = 1.0e-6;
@@ -92,9 +111,122 @@ void ResolveBoundary(inout float position, inout float velocity, float low, floa
 }
 #endif
 
+#ifdef RAVEN_SPH_CFL_REDUCE
+shared vec2 motionMaxima[64];
+
+float MagnitudeOrWide(vec3 vector)
+{
+    float squared = dot(vector, vector);
+    return isinf(squared) ? float(length(dvec3(vector))) : sqrt(squared);
+}
+
+void ReduceMotion(uint particle)
+{
+    // 残り時間がない場合は全Invocationが同じ分岐を取り、共有メモリのBarrierを飛ばせます。
+    if (remainingTime <= Epsilon)
+    {
+        return;
+    }
+    vec2 motion = vec2(0.0);
+    if (particle < dimensions.w)
+    {
+        vec3 velocity = particles[particle].velocity.xyz;
+        float mass = max(0.0, particles[particle].positionMass.w);
+        motion.x = MagnitudeOrWide(velocity);
+        if (mass > Epsilon)
+        {
+            uint offset = DynamicsOffset(particle);
+            vec3 force = uintBitsToFloat(uvec3(result[offset], result[offset + 1u], result[offset + 2u]));
+            float squared = dot(force, force);
+            motion.y = isinf(squared) ? float(length(dvec3(force)) / double(mass)) : sqrt(squared) / mass;
+        }
+        if (any(isnan(motion)))
+        {
+            atomicOr(result[0], 16u);
+            motion = vec2(0.0);
+        }
+    }
+    uint lane = gl_LocalInvocationID.x;
+    motionMaxima[lane] = motion;
+    barrier();
+    for (uint stride = 32u; stride > 0u; stride >>= 1u)
+    {
+        if (lane < stride)
+        {
+            motionMaxima[lane] = max(motionMaxima[lane], motionMaxima[lane + stride]);
+        }
+        barrier();
+    }
+    if (lane == 0u)
+    {
+        // 非負のfloatはビット表現の大小と一致するため、グループごとに1回ずつ集約できます。
+        atomicMax(maxSpeedBits, floatBitsToUint(motionMaxima[0].x));
+        atomicMax(maxAccelerationBits, floatBitsToUint(motionMaxima[0].y));
+    }
+}
+#endif
+
 void main()
 {
     uint particle = gl_GlobalInvocationID.x;
+#if defined(RAVEN_SPH_CFL_BEGIN)
+    if (particle == 0u)
+    {
+        remainingTime = dynamics.z;
+        selectedDt = 0.0;
+        minimumDt = 0.0;
+        substeps = 0u;
+        limitReached = 0u;
+        maxSpeedBits = 0u;
+        maxAccelerationBits = 0u;
+    }
+#elif defined(RAVEN_SPH_CFL_REDUCE)
+    ReduceMotion(particle);
+#elif defined(RAVEN_SPH_CFL_CHOOSE)
+    if (particle != 0u)
+    {
+        return;
+    }
+    selectedDt = 0.0;
+    if (remainingTime <= Epsilon)
+    {
+        return;
+    }
+    float stableDt = remainingTime;
+    float speed = max(uintBitsToFloat(maxSpeedBits), cfl.w);
+    float acceleration = uintBitsToFloat(maxAccelerationBits);
+    maxSpeedBits = 0u;
+    maxAccelerationBits = 0u;
+    if (cfl.x > 0.0 && speed > Epsilon)
+    {
+        stableDt = min(stableDt, cfl.x * kernelParams.w / speed);
+    }
+    if (cfl.y > 0.0 && acceleration > Epsilon)
+    {
+        stableDt = min(stableDt, cfl.y * sqrt(kernelParams.w / acceleration));
+    }
+    stableDt = min(max(stableDt, cfl.z), remainingTime);
+    if (substeps + 1u == uint(origin.w) && stableDt + Epsilon < remainingTime)
+    {
+        limitReached = 1u;
+        stableDt = remainingTime;
+    }
+    if (!(stableDt > 0.0))
+    {
+        remainingTime = 0.0;
+        return;
+    }
+    selectedDt = stableDt;
+    remainingTime -= stableDt;
+    minimumDt = substeps == 0u ? stableDt : min(minimumDt, stableDt);
+    ++substeps;
+#else
+#ifdef RAVEN_SPH_ADAPTIVE
+    if (selectedDt <= 0.0)
+    {
+        return;
+    }
+#endif
 #ifdef RAVEN_SPH_CLEAR
     if (particle < CellCount())
     {
@@ -111,10 +243,15 @@ void main()
     float mass = max(0.0, particles[particle].positionMass.w);
     uint offset = DynamicsOffset(particle);
     vec3 force = uintBitsToFloat(uvec3(result[offset], result[offset + 1u], result[offset + 2u]));
+#ifdef RAVEN_SPH_ADAPTIVE
+    float dt = selectedDt;
+#else
+    float dt = dynamics.z;
+#endif
     if (mass > Epsilon)
     {
-        velocity += (force / mass) * dynamics.z;
-        position += velocity * dynamics.z;
+        velocity += (force / mass) * dt;
+        position += velocity * dt;
     }
     if (boundaryMin.w > 0.0)
     {
@@ -224,6 +361,7 @@ void main()
         atomicOr(result[0], 2u);
     }
     result[particle + 1u] = floatBitsToUint(density);
+#endif
 #endif
 #endif
 #endif
