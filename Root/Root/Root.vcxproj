@@ -163,6 +163,7 @@
     <ClCompile Include="..\Tests\SparseSDFGPUIntegrationTests.cpp" Condition="'$(RavenUIGPUTest)'=='true'" />
     <None Include="Raven\Assets\Shaders\SparseSDF.comp;Raven\Assets\Shaders\SparseSDF.hlsl;Raven\Assets\Shaders\SparseSDF.inc" />
     <None Include="Raven\Assets\Shaders\GPUGridFluid.comp" />
+    <None Include="Raven\Assets\Shaders\GPUSPH.comp" />
     <None Include="Raven\Assets\Shaders\DenseSDF.comp;Raven\Assets\Shaders\DenseSDF.hlsl;Raven\Assets\Shaders\DenseSDF.inc" />
     <None Include="..\Tests\ComputeShaders\Smoke.hlsl;..\Tests\ComputeShaders\Smoke.comp;..\Tests\ComputeShaders\Smoke.vert;..\Tests\ComputeShaders\Smoke.frag" />
     <ClCompile Include="@(RavenRootSource)" />

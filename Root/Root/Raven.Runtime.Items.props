@@ -103,6 +103,7 @@
     <RavenRuntimeSource Include="Raven\Physics\Fluid\Debug\RunGPUGridFluidDemo.cpp" />
     <RavenRuntimeSource Include="Raven\Physics\Fluid\FluidSpatialHashGrid.cpp" />
     <RavenRuntimeSource Include="Raven\Physics\Fluid\GPUGridFluid.cpp" />
+    <RavenRuntimeSource Include="Raven\Physics\Fluid\GPUSPH.cpp" />
     <RavenRuntimeSource Include="Raven\Physics\Fluid\SPHKernel.cpp" />
     <RavenRuntimeSource Include="Raven\Physics\Fluid\SPHSolver.cpp" />
     <RavenRuntimeSource Include="Raven\Physics\Particle\ParticleSpatialHashGrid.cpp" />
@@ -339,6 +340,7 @@
     <RavenRuntimeHeader Include="Raven\Physics\Fluid\FluidSimulationParticipant.h" />
     <RavenRuntimeHeader Include="Raven\Physics\Fluid\FluidSpatialHashGrid.h" />
     <RavenRuntimeHeader Include="Raven\Physics\Fluid\GPUGridFluid.h" />
+    <RavenRuntimeHeader Include="Raven\Physics\Fluid\GPUSPH.h" />
     <RavenRuntimeHeader Include="Raven\Physics\Fluid\SPHKernel.h" />
     <RavenRuntimeHeader Include="Raven\Physics\Fluid\SPHSettings.h" />
     <RavenRuntimeHeader Include="Raven\Physics\Fluid\SPHSolver.h" />

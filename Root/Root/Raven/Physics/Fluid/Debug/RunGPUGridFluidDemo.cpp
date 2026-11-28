@@ -1,5 +1,7 @@
 #include "Raven/Physics/Fluid/Debug/RunGPUGridFluidDemo.h"
 #include "Raven/Physics/Fluid/GPUGridFluid.h"
+#include "Raven/Physics/Fluid/GPUSPH.h"
+#include "Raven/Physics/Fluid/SPHSolver.h"
 #include "Raven/Physics/Coupling/GridThermalCoupling.h"
 #include "Raven/Scene/Scene.h"
 #include "Raven/Physics/PhysicsSimulationWorld.h"
@@ -418,6 +420,170 @@ bool VerifyThermalVelocity(const Ref<RHIComputeCommandEncoder>& encoder, const D
         std::abs(result[hotCell + 1] - 20.0) < 1.0e-4 && energyError < 1.0e-9;
 }
 
+bool VerifySPHDensity()
+{
+    OpenGLRHIDevice device;
+    const auto encoder = device.CreateComputeCommandEncoder();
+    const auto capabilities = device.QueryComputeCapabilities();
+    const auto source = ReadShader("GPUSPH.comp");
+    SPHSettings settings;
+    SPHSolver cpu(settings);
+    GPUSPH gpu;
+    std::cout << "OpenGL: " << glGetString(GL_RENDERER) << '\n';
+
+    using Result = GPUSPH::PrepareResult;
+    const auto statistics = encoder == nullptr ? RHIComputeStatistics{} : encoder->GetStatistics();
+    Ref<RHIComputeTimestamp> unusedTimestamp;
+    if (Check(gpu.Prepare(encoder, capabilities, {}, settings.SmoothingRadius, source) == Result::Ready
+        && gpu.DispatchDensity(unusedTimestamp) && !gpu.RequestDensityReadback()
+        && encoder->GetStatistics().Dispatches == statistics.Dispatches, "SPH empty input") == false)
+    {
+        return false;
+    }
+
+    const auto compare = [&](const char* name, std::vector<FluidParticle> particles)
+    {
+        if (Check(gpu.Prepare(encoder, capabilities, particles, settings.SmoothingRadius, source) == Result::Ready,
+            name) == false)
+        {
+            return false;
+        }
+        constexpr std::size_t iterations = 5u;
+        Ref<RHIComputeTimestamp> warmup;
+        if (gpu.DispatchDensity(warmup) == false)
+        {
+            return false;
+        }
+        std::array<Ref<RHIComputeTimestamp>, iterations> timestamps;
+        const auto prior = encoder->GetStatistics();
+        const auto gpuStart = std::chrono::steady_clock::now();
+        for (auto& timestamp : timestamps)
+        {
+            if (gpu.DispatchDensity(timestamp) == false)
+            {
+                return false;
+            }
+        }
+        // Timestamp取得が未対応でも検証できるよう、読み戻しを含まない同期経過時間を保持します。
+        glFinish();
+        const double gpuWallMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - gpuStart).count() / iterations;
+        const auto ticket = gpu.RequestDensityReadback();
+        std::vector<std::byte> bytes;
+        if (ticket == nullptr)
+        {
+            return false;
+        }
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        auto status = ticket->Poll(bytes);
+        while (status == RHIComputeReadbackStatus::Pending && std::chrono::steady_clock::now() < deadline)
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            status = ticket->Poll(bytes);
+        }
+        std::vector<float> densities(particles.size());
+        if (Check(status == RHIComputeReadbackStatus::Ready && GPUSPH::DecodeDensity(bytes, densities)
+            && encoder->GetStatistics().Readbacks == prior.Readbacks + 1u, name) == false)
+        {
+            return false;
+        }
+
+        cpu.ComputeDensity(particles);
+        const auto start = std::chrono::steady_clock::now();
+        for (std::size_t iteration = 0u; iteration < iterations; ++iteration)
+        {
+            cpu.ComputeDensity(particles);
+        }
+        const double cpuMs = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - start).count() / iterations;
+
+        double gpuNs = 0.0;
+        bool hasTimestamps = true;
+        const auto timestampDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+        for (const auto& timestamp : timestamps)
+        {
+            double value = 0.0;
+            if (timestamp == nullptr)
+            {
+                hasTimestamps = false;
+                break;
+            }
+            auto timestampStatus = timestamp->Poll(value);
+            while (timestampStatus == RHIComputeReadbackStatus::Pending
+                && std::chrono::steady_clock::now() < timestampDeadline)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                timestampStatus = timestamp->Poll(value);
+            }
+            if (timestampStatus != RHIComputeReadbackStatus::Ready)
+            {
+                hasTimestamps = false;
+                break;
+            }
+            gpuNs += value;
+        }
+        const double gpuMs = hasTimestamps ? gpuNs / (1.0e6 * iterations) : gpuWallMs;
+        float maxAbsoluteError = 0.0f;
+        float maxRelativeError = 0.0f;
+        for (std::size_t index = 0u; index < particles.size(); ++index)
+        {
+            const float expected = particles[index].Density;
+            const float error = std::abs(densities[index] - expected);
+            const float relativeError = error / std::max(1.0f, std::abs(expected));
+            if (Check(std::isfinite(densities[index]) && relativeError <= 2.0e-4f, name) == false)
+            {
+                std::cerr << "particle=" << index << " expected=" << expected << " actual=" << densities[index] << '\n';
+                return false;
+            }
+            maxAbsoluteError = std::max(maxAbsoluteError, error);
+            maxRelativeError = std::max(maxRelativeError, relativeError);
+        }
+        std::cout << name << ", particles=" << particles.size() << ", cpu_ms=" << cpuMs
+            << ", gpu_ms=" << gpuMs << ", gpu_timer=" << (hasTimestamps ? "timestamp" : "wall")
+            << ", max_abs_error=" << maxAbsoluteError << ", max_rel_error=" << maxRelativeError << '\n';
+        return true;
+    };
+
+    std::vector<FluidParticle> boundary(5u);
+    boundary[0].Position.x = -0.2f;
+    boundary[1].Position.x = std::nextafter(-0.2f, 0.0f);
+    boundary[2].Position.x = -0.1f;
+    boundary[3].Position.x = 0.0f;
+    boundary[4].Position.x = 0.1f;
+    boundary[4].Mass = -1.0f;
+    std::vector<FluidParticle> dense(513u);
+    for (std::size_t index = 0u; index < dense.size(); ++index)
+    {
+        dense[index].Position = {static_cast<float>(index % 9u) * 0.003f,
+            static_cast<float>((index / 9u) % 9u) * 0.003f, static_cast<float>(index / 81u) * 0.003f};
+        dense[index].Mass = 0.001f * static_cast<float>(1u + index % 5u);
+    }
+    std::vector<FluidParticle> uniform(5120u);
+    for (std::size_t index = 0u; index < uniform.size(); ++index)
+    {
+        uniform[index].Position = {static_cast<float>(index % 18u) * 0.065f,
+            static_cast<float>((index / 18u) % 18u) * 0.065f, static_cast<float>(index / 324u) * 0.065f};
+        uniform[index].Mass = 0.25f;
+    }
+    if (compare("single", std::vector<FluidParticle>(1u)) == false || compare("boundary", boundary) == false
+        || compare("dense", dense) == false || compare("uniform", uniform) == false)
+    {
+        return false;
+    }
+
+    std::vector<FluidParticle> overCapacity(2u);
+    overCapacity[1].Position = {100.0f, 100.0f, 100.0f};
+    if (Check(gpu.Prepare(encoder, capabilities, overCapacity, settings.SmoothingRadius, source)
+        == Result::CapacityExceeded && gpu.DispatchDensity(unusedTimestamp) == false
+        && !gpu.RequestDensityReadback(), "SPH capacity detection") == false)
+    {
+        return false;
+    }
+    cpu.ComputeDensity(overCapacity);
+    return Check(std::isfinite(overCapacity[0].Density) && overCapacity[0].Density > 0.0f
+        && overCapacity[0].Density == overCapacity[1].Density, "SPH CPU fallback");
+}
+
 bool Run(GLFWwindow& window, bool verify)
 {
     OpenGLRHIDevice device;
@@ -478,6 +644,33 @@ bool Run(GLFWwindow& window, bool verify)
     return true;
 }
 } // namespace
+
+int RunGPUSPHVerification()
+{
+    if (Check(glfwInit() == GLFW_TRUE, "GLFW initialization") == false)
+    {
+        return 1;
+    }
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+    GLFWwindow* pWindow = glfwCreateWindow(32, 32, "Raven GPU SPH verification", nullptr, nullptr);
+    bool successful = false;
+    if (Check(pWindow != nullptr, "OpenGL 4.3 context"))
+    {
+        glfwMakeContextCurrent(pWindow);
+        successful = Check(gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)) != 0,
+            "OpenGL loader") && VerifySPHDensity();
+        glfwDestroyWindow(pWindow);
+    }
+    glfwTerminate();
+    if (successful == true)
+    {
+        std::cout << "[PASS] GPU SPH Density verification\n";
+    }
+    return successful ? 0 : 1;
+}
 
 int RunGPUGridFluidDemo(bool verify)
 {
