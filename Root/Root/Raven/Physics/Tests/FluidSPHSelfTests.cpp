@@ -26,11 +26,12 @@
 namespace Raven::ph::tests
 {
 
-int RunFluidSPHBenchmark(bool compareCache, bool compareDensity, bool compareCellSizes, bool compareVerlet, bool compareForce)
+int RunFluidSPHBenchmark(bool compareCache, bool compareDensity, bool compareCellSizes, bool compareVerlet, bool compareForce,
+    bool compareSoA)
 {
     constexpr std::size_t workerCount = 4u;
-    const std::size_t warmupSteps = (compareCache || compareDensity || compareCellSizes || compareVerlet || compareForce) ? 5u : 20u;
-    const std::size_t sampleSteps = (compareCache || compareDensity || compareCellSizes || compareVerlet || compareForce) ? 20u : 300u;
+    const std::size_t warmupSteps = (compareCache || compareDensity || compareCellSizes || compareVerlet || compareForce || compareSoA) ? 5u : 20u;
+    const std::size_t sampleSteps = (compareCache || compareDensity || compareCellSizes || compareVerlet || compareForce || compareSoA) ? 20u : 300u;
     constexpr float deltaTime = 1.0f / 60.0f;
     constexpr std::string_view prefix = "Physics.Fluid.SPH.";
     JobSystem jobSystem(workerCount);
@@ -50,6 +51,7 @@ int RunFluidSPHBenchmark(bool compareCache, bool compareDensity, bool compareCel
         float m_VerletSkinScale = 0.0f;
         std::size_t m_Workers = workerCount;
         float m_Viscosity = SPHSettings{}.Viscosity;
+        SPHSolver::ParticleLayout m_Layout = SPHSolver::ParticleLayout::AoS;
     };
     constexpr std::size_t kilo = 1024u;
     std::vector<CacheConfiguration> configurations = compareCache
@@ -95,6 +97,17 @@ int RunFluidSPHBenchmark(bool compareCache, bool compareDensity, bool compareCel
         // 粘性なしのKernel経路は4 Workerと同じ配置で比較します。
         configurations.push_back({256u * kilo, false, true, 1.0f, 0.0f, 4u, 0.0f});
     }
+    if (compareSoA == true)
+    {
+        using Layout = SPHSolver::ParticleLayout;
+        configurations.clear();
+        for (const auto layout : {Layout::AoS, Layout::SoA, Layout::CellSortedSoA, Layout::CellSortedAVX2})
+        {
+            CacheConfiguration configuration{SPHSettings{}.MaximumCachedNeighbors, false};
+            configuration.m_Layout = layout;
+            configurations.push_back(configuration);
+        }
+    }
     struct ParticleConfiguration
     {
         std::size_t m_Count;
@@ -121,9 +134,13 @@ int RunFluidSPHBenchmark(bool compareCache, bool compareDensity, bool compareCel
         layouts = {{512u, 0.065f}, {1024u, 0.065f}, {5120u, 0.065f},
             {5120u, 0.065f, false, true}};
     }
+    if (compareSoA == true)
+    {
+        layouts = {{1024u, 0.065f}, {5120u, 0.025f}, {5120u, 0.065f, false, true}};
+    }
     for (const auto& [particleCount, spacing, isStationary, hasSkewedCluster] : layouts)
     {
-        for (const auto& [cacheLimit, shouldReuseRows, shouldUseJobs, cellSizeScale, verletSkinScale, workers, viscosity] : configurations)
+        for (const auto& [cacheLimit, shouldReuseRows, shouldUseJobs, cellSizeScale, verletSkinScale, workers, viscosity, layout] : configurations)
         {
             if (compareVerlet && spacing > 0.025f && cacheLimit != SPHSettings{}.MaximumCachedNeighbors)
             {
@@ -148,7 +165,7 @@ int RunFluidSPHBenchmark(bool compareCache, bool compareDensity, bool compareCel
             }
             settings.BoundaryEnabled = true;
             settings.BoundaryMaximum = {3.0f, 3.0f, 3.0f};
-            SPHSolver solver(settings);
+            SPHSolver solver(settings, layout);
             std::vector<FluidParticle> initial(particleCount);
             const auto side = static_cast<std::size_t>(std::ceil(std::cbrt(particleCount)));
             for (std::size_t index = 0u; index < particleCount; ++index)
@@ -237,6 +254,7 @@ int RunFluidSPHBenchmark(bool compareCache, bool compareDensity, bool compareCel
                 << ",stationary=" << isStationary
                 << ",skewed=" << hasSkewedCluster << ",viscosity=" << viscosity
                 << ",workers=" << (shouldUseJobs ? workers : 0u)
+                << ",layout=" << static_cast<int>(layout)
                 << ",cell_size_scale=" << cellSizeScale
                 << ",verlet_skin_scale=" << verletSkinScale
                 << ",cache_limit=" << cacheLimit << ",reuse_rows=" << shouldReuseRows
@@ -1171,6 +1189,68 @@ void RunFluidSPHSelfTests()
                 assert((actual[index].Position - expected[index].Position).LengthSq() == 0.0f);
             }
         }
+    }
+
+    // セル順の内部配置やSIMDの端数処理で、元インデックスと物理状態が変わらないことを確認します。
+    {
+        using Layout = SPHSolver::ParticleLayout;
+        SPHSettings settings{};
+        settings.SmoothingRadius = 1.0f;
+        settings.StableTimeStepEnabled = false;
+        std::vector<FluidParticle> initial(19u);
+        for (std::size_t index = 0u; index < initial.size(); ++index)
+        {
+            const auto positionIndex = (index * 7u) % initial.size();
+            initial[index].Position = {static_cast<float>(positionIndex) * 0.08f - 0.6f,
+                static_cast<float>(index % 3u) * 0.08f, -0.4f};
+            initial[index].Velocity.y = static_cast<float>(index) * 0.05f;
+            initial[index].Mass = static_cast<float>(index) * 0.04f;
+        }
+        const auto isNear = [](float actual, float expected)
+        {
+            return std::abs(actual - expected) <= 1.0e-5f * std::max(1.0f, std::abs(expected));
+        };
+        const auto isVectorNear = [&](const math::Vec3& actual, const math::Vec3& expected)
+        {
+            return isNear(actual.x, expected.x) && isNear(actual.y, expected.y) && isNear(actual.z, expected.z);
+        };
+        const auto checkLayouts = [&](const std::vector<FluidParticle>& source, JobSystem* pJobs)
+        {
+            for (const std::size_t limit : {0u, 262144u})
+            {
+                settings.MaximumCachedNeighbors = limit;
+                SPHSolver reference(settings);
+                auto expected = source;
+                reference.Step(expected, 1.0e-3f, pJobs);
+                for (const auto layout : {Layout::SoA, Layout::CellSortedSoA, Layout::CellSortedAVX2})
+                {
+                    SPHSolver solver(settings, layout);
+                    auto actual = source;
+                    const auto* pData = actual.data();
+                    solver.Step(actual, 1.0e-3f, pJobs);
+                    assert(actual.data() == pData);
+                    for (std::size_t index = 0u; index < actual.size(); ++index)
+                    {
+                        assert(actual[index].Mass == source[index].Mass);
+                        assert(isNear(actual[index].Density, expected[index].Density));
+                        assert(isNear(actual[index].Pressure, expected[index].Pressure));
+                        assert(isVectorNear(actual[index].Force, expected[index].Force));
+                        assert(isVectorNear(actual[index].Position, expected[index].Position));
+                        assert(isVectorNear(actual[index].Velocity, expected[index].Velocity));
+                    }
+                }
+            }
+        };
+        checkLayouts(initial, nullptr);
+
+        JobSystem jobs(2u);
+        std::vector<FluidParticle> parallelInput(1031u);
+        for (std::size_t index = 0u; index < parallelInput.size(); ++index)
+        {
+            parallelInput[index] = initial[index % initial.size()];
+            parallelInput[index].Position.z += static_cast<float>(index / initial.size()) * 3.0f;
+        }
+        checkLayouts(parallelInput, &jobs);
     }
 
     // Fluid Particle <-> Sphere Static Collider:

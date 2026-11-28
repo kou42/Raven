@@ -26,7 +26,10 @@ namespace ph
 class SPHSolver
 {
 public:
-    explicit SPHSolver(const SPHSettings& settings = SPHSettings{});
+    // SoA経路は比較用です。公開粒子配列の順序はどの経路でも維持します。
+    enum class ParticleLayout { AoS, SoA, CellSortedSoA, CellSortedAVX2 };
+    explicit SPHSolver(const SPHSettings& settings = SPHSettings{},
+        ParticleLayout layout = ParticleLayout::AoS);
 
     void SetSettings(const SPHSettings& settings);
     const SPHSettings& GetSettings() const { return m_Settings; }
@@ -51,6 +54,26 @@ public:
     bool WasLastSubstepLimitReached() const { return m_LastSubstepLimitReached; }
 
 private:
+    struct ParticleSoA
+    {
+        struct CellEntry
+        {
+            math::Vec3 m_Cell;
+            uint32_t m_Index;
+        };
+        std::array<std::vector<float>, 3> m_Position;
+        std::array<std::vector<float>, 3> m_Velocity;
+        std::vector<float> m_Mass;
+        std::vector<uint32_t> m_IndexToSlot;
+        std::vector<CellEntry> m_CellOrder;
+        bool m_UsesAVX2 = false;
+
+        void Build(const std::vector<FluidParticle>& particles, float cellSize, ParticleLayout layout);
+        math::Vec3 GetPosition(uint32_t index) const;
+        math::Vec3 GetVelocity(uint32_t index) const;
+        std::size_t GetCapacityBytes() const;
+    };
+
     struct CachedNeighbor
     {
         uint32_t ParticleIndex;
@@ -121,12 +144,12 @@ private:
         std::span<NeighborForceTerms> forceTerms, NeighborSearch search, float searchRadius,
         std::span<uint64_t> forceWork) const;
     void ComputeForcesUsingCurrentGrid(std::vector<FluidParticle>& particles,
-        std::span<const DensityJobBuffer> cachedRanges, JobSystem* pJobSystem);
+        std::span<const DensityJobBuffer> cachedRanges, JobSystem* pJobSystem, bool usesSoA = false);
     void PlanForceRanges(std::size_t particleCount, std::span<const DensityJobBuffer> cachedRanges,
         std::span<std::size_t> rangeEnds);
     ForceNeighborCounts ComputeForceRange(std::vector<FluidParticle>& particles,
         std::size_t rangeBegin, std::size_t rangeEnd,
-        std::span<const DensityJobBuffer> cachedRanges) const noexcept;
+        std::span<const DensityJobBuffer> cachedRanges, bool usesSoA) const noexcept;
     float EvaluatePressure(float density) const;
     NeighborForceTerms EvaluateNeighborForceTerms(const FluidParticle& particle, bool hasViscosity) const;
     ParticleStatistics ScanParticleStatistics(const std::vector<FluidParticle>& particles) const;
@@ -136,6 +159,8 @@ private:
         JobSystem* pJobSystem, VerletStepState* pVerlet = nullptr);
 
 private:
+    ParticleLayout m_ParticleLayout;
+    ParticleSoA m_ParticleSoA;
     SPHSettings m_Settings{};
     SPHKernel m_Kernel{m_Settings.SmoothingRadius};
     FluidSpatialHashGrid m_SpatialHash;

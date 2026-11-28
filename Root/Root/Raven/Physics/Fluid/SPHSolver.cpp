@@ -7,6 +7,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <tuple>
+
+#if defined(_MSC_VER) && defined(_M_X64)
+#include <immintrin.h>
+#include <intrin.h>
+#endif
 
 #include "Raven/Core/CPUProfiler.h"
 #include "Raven/Core/Jobs/JobSystem.h"
@@ -19,6 +25,75 @@ namespace ph
 {
 namespace
 {
+constexpr std::size_t SimdWidth = 8u;
+
+bool SupportsAVX2()
+{
+#if defined(_MSC_VER) && defined(_M_X64)
+    static const bool supported = []()
+    {
+        int registers[4]{};
+        __cpuid(registers, 0);
+        if (registers[0] < 7)
+        {
+            return false;
+        }
+        __cpuid(registers, 1);
+        constexpr int avxAndOsXsave = (1 << 28) | (1 << 27);
+        if ((registers[2] & avxAndOsXsave) != avxAndOsXsave || (_xgetbv(0) & 6u) != 6u)
+        {
+            return false;
+        }
+        __cpuidex(registers, 7, 0);
+        return (registers[1] & (1 << 5)) != 0;
+    }();
+    return supported;
+#else
+    return false;
+#endif
+}
+
+struct NeighborBatch
+{
+    std::array<float, SimdWidth> m_Dx;
+    std::array<float, SimdWidth> m_Dy;
+    std::array<float, SimdWidth> m_Dz;
+    std::array<float, SimdWidth> m_DistanceSquared;
+};
+
+#if defined(_MSC_VER) && defined(_M_X64)
+// 明示intrinsicの発行をこの関数に限定します。通常コードに /arch:AVX2 を設定しません。
+#pragma warning(push)
+#pragma warning(disable: 4752)
+__declspec(noinline) void EvaluateNeighborBatch(const std::array<std::vector<float>, 3>& positions,
+    const std::array<uint32_t, SimdWidth>& slots, const math::Vec3& center, NeighborBatch& output,
+    const float* pMass = nullptr, float hSquared = 0.0f, float poly6 = 0.0f, float* pDensity = nullptr)
+{
+    const __m256i indices = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(slots.data()));
+    const __m256 dx = _mm256_sub_ps(_mm256_set1_ps(center.x), _mm256_i32gather_ps(positions[0].data(), indices, 4));
+    const __m256 dy = _mm256_sub_ps(_mm256_set1_ps(center.y), _mm256_i32gather_ps(positions[1].data(), indices, 4));
+    const __m256 dz = _mm256_sub_ps(_mm256_set1_ps(center.z), _mm256_i32gather_ps(positions[2].data(), indices, 4));
+    const __m256 xy = _mm256_add_ps(_mm256_mul_ps(dx, dx), _mm256_mul_ps(dy, dy));
+    const __m256 squared = _mm256_add_ps(xy, _mm256_mul_ps(dz, dz));
+    _mm256_storeu_ps(output.m_DistanceSquared.data(), squared);
+    if (pDensity != nullptr)
+    {
+        const __m256 gap = _mm256_sub_ps(_mm256_set1_ps(hSquared), squared);
+        const __m256 mass = _mm256_max_ps(_mm256_i32gather_ps(pMass, indices, 4), _mm256_setzero_ps());
+        const __m256 first = _mm256_mul_ps(_mm256_set1_ps(poly6), gap);
+        const __m256 kernel = _mm256_mul_ps(_mm256_mul_ps(first, gap), gap);
+        _mm256_storeu_ps(pDensity, _mm256_mul_ps(mass, kernel));
+    }
+    else
+    {
+        _mm256_storeu_ps(output.m_Dx.data(), dx);
+        _mm256_storeu_ps(output.m_Dy.data(), dy);
+        _mm256_storeu_ps(output.m_Dz.data(), dz);
+    }
+}
+#pragma warning(pop)
+#endif
+
 constexpr float MinimumSmoothingRadius = 1.0e-4f;
 constexpr float MinimumSpatialHashCellSizeScale = 0.01f;
 constexpr std::size_t InitialNeighborCapacity = 1024u;
@@ -132,10 +207,83 @@ void IntegrateParticle(FluidParticle& particle, float mass, float deltaTime)
 
 }
 
-SPHSolver::SPHSolver(const SPHSettings& settings)
-    : m_SpatialHash(settings.SmoothingRadius)
+SPHSolver::SPHSolver(const SPHSettings& settings, ParticleLayout layout)
+    : m_ParticleLayout(layout)
+    , m_SpatialHash(settings.SmoothingRadius)
 {
     SetSettings(settings);
+}
+
+void SPHSolver::ParticleSoA::Build(const std::vector<FluidParticle>& particles, float cellSize, ParticleLayout layout)
+{
+    Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.SoAConversion", Diagnostics::DiagnosticCategory::Physics);
+    const bool isSorted = layout != ParticleLayout::SoA;
+    m_UsesAVX2 = layout == ParticleLayout::CellSortedAVX2
+        && particles.size() <= static_cast<std::size_t>(std::numeric_limits<int32_t>::max()) && SupportsAVX2();
+    m_IndexToSlot.resize(particles.size());
+    m_Mass.resize(particles.size());
+    for (std::size_t axis = 0u; axis < m_Position.size(); ++axis)
+    {
+        m_Position[axis].resize(particles.size());
+        m_Velocity[axis].resize(particles.size());
+    }
+    if (isSorted == true)
+    {
+        Diagnostics::ProfiledTraceScope sortTrace("Physics.Fluid.SPH.SoACellSort", Diagnostics::DiagnosticCategory::Physics);
+        m_CellOrder.resize(particles.size());
+        const float inverseCellSize = 1.0f / cellSize;
+        const auto cellOf = [inverseCellSize](float value)
+        {
+            return std::isfinite(value) ? std::floor(value * inverseCellSize) : 0.0f;
+        };
+        for (std::size_t index = 0u; index < particles.size(); ++index)
+        {
+            const auto position = particles[index].Position;
+            m_CellOrder[index] = {{cellOf(position.x), cellOf(position.y), cellOf(position.z)},
+                static_cast<uint32_t>(index)};
+        }
+        std::sort(m_CellOrder.begin(), m_CellOrder.end(), [](const CellEntry& lhs, const CellEntry& rhs)
+        {
+            return std::tie(lhs.m_Cell.z, lhs.m_Cell.y, lhs.m_Cell.x, lhs.m_Index)
+                < std::tie(rhs.m_Cell.z, rhs.m_Cell.y, rhs.m_Cell.x, rhs.m_Index);
+        });
+    }
+    for (std::size_t slot = 0u; slot < particles.size(); ++slot)
+    {
+        const auto index = isSorted ? m_CellOrder[slot].m_Index : slot;
+        const auto& particle = particles[index];
+        m_IndexToSlot[index] = static_cast<uint32_t>(slot);
+        m_Position[0][slot] = particle.Position.x;
+        m_Position[1][slot] = particle.Position.y;
+        m_Position[2][slot] = particle.Position.z;
+        m_Velocity[0][slot] = particle.Velocity.x;
+        m_Velocity[1][slot] = particle.Velocity.y;
+        m_Velocity[2][slot] = particle.Velocity.z;
+        m_Mass[slot] = particle.Mass;
+    }
+}
+
+math::Vec3 SPHSolver::ParticleSoA::GetPosition(uint32_t index) const
+{
+    const auto slot = m_IndexToSlot[index];
+    return {m_Position[0][slot], m_Position[1][slot], m_Position[2][slot]};
+}
+
+math::Vec3 SPHSolver::ParticleSoA::GetVelocity(uint32_t index) const
+{
+    const auto slot = m_IndexToSlot[index];
+    return {m_Velocity[0][slot], m_Velocity[1][slot], m_Velocity[2][slot]};
+}
+
+std::size_t SPHSolver::ParticleSoA::GetCapacityBytes() const
+{
+    std::size_t bytes = m_Mass.capacity() * sizeof(float) + m_IndexToSlot.capacity() * sizeof(uint32_t)
+        + m_CellOrder.capacity() * sizeof(CellEntry);
+    for (std::size_t axis = 0u; axis < m_Position.size(); ++axis)
+    {
+        bytes += (m_Position[axis].capacity() + m_Velocity[axis].capacity()) * sizeof(float);
+    }
+    return bytes;
 }
 
 void SPHSolver::SetSettings(const SPHSettings& settings)
@@ -468,6 +616,7 @@ void SPHSolver::ComputeDensityRange(std::vector<FluidParticle>& particles, Densi
     const std::size_t limit = buffer.m_CacheLimit;
     bool isCaching = buffer.m_Offsets.empty() == false;
     const bool hasViscosity = m_Settings.Viscosity > 0.0f;
+    const bool usesSoA = forceTerms.empty() == false && m_ParticleLayout != ParticleLayout::AoS;
     const bool isReusing = search == NeighborSearch::ReuseVerlet;
     if (isReusing == false)
     {
@@ -506,7 +655,7 @@ void SPHSolver::ComputeDensityRange(std::vector<FluidParticle>& particles, Densi
         buffer.m_Neighbors.push_back({index, distanceSquared});
     };
 
-    const auto computeRange = [&]<NeighborSearch Search>()
+    const auto computeRange = [&]<NeighborSearch Search, bool UsesSoA>()
     {
         for (std::size_t i = buffer.m_RangeBegin; i < buffer.m_RangeEnd; ++i)
         {
@@ -514,13 +663,29 @@ void SPHSolver::ComputeDensityRange(std::vector<FluidParticle>& particles, Densi
             const uint64_t previousAccepted = acceptedNeighborCount;
             FluidParticle& particle = particles[i];
             float density = 0.0f;
-            const auto accumulateDensity = [&](const FluidParticle& neighbor, float rSq)
+            const auto accumulateDensity = [&](float mass, float rSq)
             {
                 // rho_i = sum_j m_j W(|x_i-x_j|, h)。self contributionも含めます。
                 if (rSq <= hSq)
                 {
                     ++acceptedNeighborCount;
-                    density += std::max(0.0f, neighbor.Mass) * m_Kernel.EvaluatePoly6Density(rSq);
+                    density += std::max(0.0f, mass) * m_Kernel.EvaluatePoly6Density(rSq);
+                }
+            };
+            const auto processCandidate = [&](uint32_t j, float rSq)
+            {
+                if constexpr (Search == NeighborSearch::BuildVerlet)
+                {
+                    // 後のSubstepでh内へ入る候補と、Densityに必要なselfを探索順で保持します。
+                    if (isCaching == true && rSq <= searchRadiusSq)
+                    {
+                        appendNeighbor(j, rSq);
+                    }
+                }
+                else if (isCaching == true && rSq <= hSq && j != i && rSq > nearZeroDistanceSq)
+                {
+                    // 厳密なh判定済みのForce候補だけを保存します。
+                    appendNeighbor(j, rSq);
                 }
             };
             if constexpr (Search == NeighborSearch::ReuseVerlet)
@@ -534,36 +699,102 @@ void SPHSolver::ComputeDensityRange(std::vector<FluidParticle>& particles, Densi
                     CachedNeighbor& cached = buffer.m_Neighbors[index];
                     const FluidParticle& neighbor = particles[cached.ParticleIndex];
                     cached.DistanceSquared = (particle.Position - neighbor.Position).LengthSq();
-                    accumulateDensity(neighbor, cached.DistanceSquared);
+                    accumulateDensity(neighbor.Mass, cached.DistanceSquared);
                 }
             }
             else
             {
-                m_SpatialHash.ForEachPreparedNeighborParticle(particle.Position, searchRadius, [&](uint32_t j)
+                if constexpr (UsesSoA == false)
                 {
-                    ++candidateVisitCount;
-                    if (j >= particles.size())
+                    m_SpatialHash.ForEachPreparedNeighborParticle(particle.Position, searchRadius, [&](uint32_t j)
                     {
-                        return;
-                    }
-
-                    const FluidParticle& neighbor = particles[j];
-                    const float rSq = (particle.Position - neighbor.Position).LengthSq();
-                    accumulateDensity(neighbor, rSq);
-                    if constexpr (Search == NeighborSearch::BuildVerlet)
-                    {
-                        // 後のSubstepでh内へ入る候補と、Densityに必要なselfを探索順で保持します。
-                        if (isCaching == true && rSq <= searchRadiusSq)
+                        ++candidateVisitCount;
+                        if (j >= particles.size())
                         {
+                            return;
+                        }
+
+                        const FluidParticle& neighbor = particles[j];
+                        const float rSq = (particle.Position - neighbor.Position).LengthSq();
+                        accumulateDensity(neighbor.Mass, rSq);
+                        if constexpr (Search == NeighborSearch::BuildVerlet)
+                        {
+                            // 後のSubstepでh内へ入る候補と、Densityに必要なselfを探索順で保持します。
+                            if (isCaching == true && rSq <= searchRadiusSq)
+                            {
+                                appendNeighbor(j, rSq);
+                            }
+                        }
+                        else if (isCaching == true && rSq <= hSq && j != i && rSq > nearZeroDistanceSq)
+                        {
+                            // 厳密なh判定済みのForce候補だけを保存します。
                             appendNeighbor(j, rSq);
                         }
-                    }
-                    else if (isCaching == true && rSq <= hSq && j != i && rSq > nearZeroDistanceSq)
+                    });
+                }
+                else
+                {
+                    const auto visitScalar = [&](uint32_t j)
                     {
-                        // 厳密なh判定済みのForce候補だけを保存します。
-                        appendNeighbor(j, rSq);
+                        const float rSq = (particle.Position - m_ParticleSoA.GetPosition(j)).LengthSq();
+                        const float mass = m_ParticleSoA.m_Mass[m_ParticleSoA.m_IndexToSlot[j]];
+                        accumulateDensity(mass, rSq);
+                        processCandidate(j, rSq);
+                    };
+#if defined(_MSC_VER) && defined(_M_X64)
+                    if (m_ParticleSoA.m_UsesAVX2)
+                    {
+                        std::array<uint32_t, SimdWidth> ids;
+                        std::array<uint32_t, SimdWidth> slots;
+                        std::size_t count = 0u;
+                        m_SpatialHash.ForEachPreparedNeighborParticle(particle.Position, searchRadius, [&](uint32_t j)
+                        {
+                            ++candidateVisitCount;
+                            if (j >= particles.size())
+                            {
+                                return;
+                            }
+                            ids[count] = j;
+                            slots[count] = m_ParticleSoA.m_IndexToSlot[j];
+                            ++count;
+                            if (count == SimdWidth)
+                            {
+                                NeighborBatch batch;
+                                std::array<float, SimdWidth> contributions;
+                                EvaluateNeighborBatch(m_ParticleSoA.m_Position, slots, particle.Position, batch,
+                                    m_ParticleSoA.m_Mass.data(), hSq, m_Kernel.m_Poly6Coefficient, contributions.data());
+                                // SIMD後も候補訪問順に加算し、粒子インデックスでキャッシュへ保存します。
+                                for (std::size_t lane = 0u; lane < SimdWidth; ++lane)
+                                {
+                                    const float rSq = batch.m_DistanceSquared[lane];
+                                    if (rSq <= hSq)
+                                    {
+                                        density += contributions[lane];
+                                        ++acceptedNeighborCount;
+                                    }
+                                    processCandidate(ids[lane], rSq);
+                                }
+                                count = 0u;
+                            }
+                        });
+                        for (std::size_t lane = 0u; lane < count; ++lane)
+                        {
+                            visitScalar(ids[lane]);
+                        }
                     }
-                });
+                    else
+#endif
+                    {
+                        m_SpatialHash.ForEachPreparedNeighborParticle(particle.Position, searchRadius, [&](uint32_t j)
+                        {
+                            ++candidateVisitCount;
+                            if (j < particles.size())
+                            {
+                                visitScalar(j);
+                            }
+                        });
+                    }
+                }
                 if (isCaching == true)
                 {
                     ++buffer.m_CachedRowCount;
@@ -584,16 +815,28 @@ void SPHSolver::ComputeDensityRange(std::vector<FluidParticle>& particles, Densi
         }
     };
 
+    // 比較モードの分岐は範囲ごとに行い、通常の候補ループへ持ち込みません。
+    const auto computeLayout = [&]<NeighborSearch Search>()
+    {
+        if (usesSoA == true)
+        {
+            computeRange.template operator()<Search, true>();
+        }
+        else
+        {
+            computeRange.template operator()<Search, false>();
+        }
+    };
     switch (search)
     {
     case NeighborSearch::Grid:
-        computeRange.template operator()<NeighborSearch::Grid>();
+        computeLayout.template operator()<NeighborSearch::Grid>();
         break;
     case NeighborSearch::BuildVerlet:
-        computeRange.template operator()<NeighborSearch::BuildVerlet>();
+        computeLayout.template operator()<NeighborSearch::BuildVerlet>();
         break;
     case NeighborSearch::ReuseVerlet:
-        computeRange.template operator()<NeighborSearch::ReuseVerlet>();
+        computeLayout.template operator()<NeighborSearch::ReuseVerlet>();
         break;
     }
     buffer.m_Candidates = candidateVisitCount;
@@ -695,7 +938,7 @@ void SPHSolver::PlanForceRanges(std::size_t particleCount, std::span<const Densi
 }
 
 void SPHSolver::ComputeForcesUsingCurrentGrid(
-    std::vector<FluidParticle>& particles, std::span<const DensityJobBuffer> cachedRanges, JobSystem* pJobSystem)
+    std::vector<FluidParticle>& particles, std::span<const DensityJobBuffer> cachedRanges, JobSystem* pJobSystem, bool usesSoA)
 {
     Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.Force", Diagnostics::DiagnosticCategory::Physics);
     std::size_t jobLimit = 0u;
@@ -739,11 +982,11 @@ void SPHSolver::ComputeForcesUsingCurrentGrid(
                 // Jobは担当粒子のForceだけを書き、近傍粒子のForceは読みません。
                 const std::size_t rangeEnd = rangeEnds[jobCount];
                 jobs[jobCount] = pJobSystem->Submit(
-                    [this, &particles, rangeBegin, rangeEnd, cachedRanges, shouldMeasureJobs]()
+                    [this, &particles, rangeBegin, rangeEnd, cachedRanges, shouldMeasureJobs, usesSoA]()
                     {
                         const auto start = shouldMeasureJobs ? Clock::now() : Clock::time_point{};
                         ForceNeighborCounts result = ComputeForceRange(
-                            particles, rangeBegin, rangeEnd, cachedRanges);
+                            particles, rangeBegin, rangeEnd, cachedRanges, usesSoA);
                         if (shouldMeasureJobs == true)
                         {
                             result.m_Milliseconds =
@@ -766,7 +1009,7 @@ void SPHSolver::ComputeForcesUsingCurrentGrid(
     }
 
     ForceNeighborCounts counts = ComputeForceRange(
-        particles, rangeBegin, particles.size(), cachedRanges);
+        particles, rangeBegin, particles.size(), cachedRanges, usesSoA);
     uint64_t minimumRangeCandidates = counts.m_Candidates;
     uint64_t maximumRangeCandidates = counts.m_Candidates;
     double minimumJobMilliseconds = std::numeric_limits<double>::max();
@@ -829,7 +1072,7 @@ void SPHSolver::ComputeForcesUsingCurrentGrid(
 
 SPHSolver::ForceNeighborCounts SPHSolver::ComputeForceRange(std::vector<FluidParticle>& particles,
     std::size_t rangeBegin, std::size_t rangeEnd,
-    std::span<const DensityJobBuffer> cachedRanges) const noexcept
+    std::span<const DensityJobBuffer> cachedRanges, bool usesSoA) const noexcept
 {
     const float h = m_Settings.SmoothingRadius;
     const float hSq = h * h;
@@ -843,7 +1086,7 @@ SPHSolver::ForceNeighborCounts SPHSolver::ComputeForceRange(std::vector<FluidPar
     {
         ++cacheIndex;
     }
-    const auto computeRange = [&]<bool HasViscosity>()
+    const auto computeRange = [&]<bool HasViscosity, bool UsesSoA>()
     {
         for (std::size_t i = rangeBegin; i < rangeEnd; ++i)
         {
@@ -890,7 +1133,9 @@ SPHSolver::ForceNeighborCounts SPHSolver::ComputeForceRange(std::vector<FluidPar
 
                 if constexpr (HasViscosity)
                 {
-                    force += (particles[neighborIndex].Velocity - particle.Velocity)
+                    const auto neighborVelocity = UsesSoA ? m_ParticleSoA.GetVelocity(neighborIndex)
+                        : particles[neighborIndex].Velocity;
+                    force += (neighborVelocity - particle.Velocity)
                         * (viscosityMassI * terms.Mass * terms.InverseDensity
                             * m_Kernel.EvaluateViscosityLaplacianInSupport(remainingRadius));
                 }
@@ -911,43 +1156,119 @@ SPHSolver::ForceNeighborCounts SPHSolver::ComputeForceRange(std::vector<FluidPar
                     {
                         continue;
                     }
-                    const FluidParticle& neighbor = particles[cached.ParticleIndex];
-                    applyForce(cached.ParticleIndex, particle.Position - neighbor.Position, cached.DistanceSquared);
+                    const auto neighborPosition = UsesSoA ? m_ParticleSoA.GetPosition(cached.ParticleIndex)
+                        : particles[cached.ParticleIndex].Position;
+                    applyForce(cached.ParticleIndex, particle.Position - neighborPosition, cached.DistanceSquared);
                 }
             }
             else
             {
                 // 粒子近傍キャッシュの上限を超えても、同じSubstepの密度計算が準備したCell一覧は再利用できます。
                 // 単独ComputeForcesや準備上限に達したGridでは、既存のCell探索へ戻ります。
-                m_SpatialHash.ForEachPreparedNeighborParticle(particle.Position, h, [&](uint32_t j)
+                if constexpr (UsesSoA == false)
                 {
-                    ++counts.m_Candidates;
-                    if (j >= particles.size() || j == static_cast<uint32_t>(i))
+                    m_SpatialHash.ForEachPreparedNeighborParticle(particle.Position, h, [&](uint32_t j)
                     {
-                        return;
-                    }
+                        ++counts.m_Candidates;
+                        if (j >= particles.size() || j == static_cast<uint32_t>(i))
+                        {
+                            return;
+                        }
 
-                    const FluidParticle& neighbor = particles[j];
-                    const math::Vec3 displacement = particle.Position - neighbor.Position;
-                    const float rSq = displacement.LengthSq();
-                    if (rSq <= math::Epsilon * math::Epsilon || rSq > hSq)
+                        const FluidParticle& neighbor = particles[j];
+                        const math::Vec3 displacement = particle.Position - neighbor.Position;
+                        const float rSq = displacement.LengthSq();
+                        if (rSq <= math::Epsilon * math::Epsilon || rSq > hSq)
+                        {
+                            return;
+                        }
+                        applyForce(j, displacement, rSq);
+                    });
+                }
+                else
+                {
+                    const auto applyCandidate = [&](uint32_t j, const math::Vec3& displacement, float rSq)
                     {
-                        return;
+                        if (rSq > math::Epsilon * math::Epsilon && rSq <= hSq)
+                        {
+                            applyForce(j, displacement, rSq);
+                        }
+                    };
+                    const auto applyScalar = [&](uint32_t j)
+                    {
+                        const auto neighborPosition = m_ParticleSoA.GetPosition(j);
+                        const auto displacement = particle.Position - neighborPosition;
+                        applyCandidate(j, displacement, displacement.LengthSq());
+                    };
+#if defined(_MSC_VER) && defined(_M_X64)
+                    if (m_ParticleSoA.m_UsesAVX2)
+                    {
+                        std::array<uint32_t, SimdWidth> ids;
+                        std::array<uint32_t, SimdWidth> slots;
+                        std::size_t count = 0u;
+                        m_SpatialHash.ForEachPreparedNeighborParticle(particle.Position, h, [&](uint32_t j)
+                        {
+                            ++counts.m_Candidates;
+                            if (j >= particles.size() || j == i)
+                            {
+                                return;
+                            }
+                            ids[count] = j;
+                            slots[count] = m_ParticleSoA.m_IndexToSlot[j];
+                            ++count;
+                            if (count == SimdWidth)
+                            {
+                                NeighborBatch batch;
+                                EvaluateNeighborBatch(m_ParticleSoA.m_Position, slots, particle.Position, batch);
+                                for (std::size_t lane = 0u; lane < SimdWidth; ++lane)
+                                {
+                                    applyCandidate(ids[lane], {batch.m_Dx[lane], batch.m_Dy[lane], batch.m_Dz[lane]},
+                                        batch.m_DistanceSquared[lane]);
+                                }
+                                count = 0u;
+                            }
+                        });
+                        for (std::size_t lane = 0u; lane < count; ++lane)
+                        {
+                            applyScalar(ids[lane]);
+                        }
                     }
-                    applyForce(j, displacement, rSq);
-                });
+                    else
+#endif
+                    {
+                        m_SpatialHash.ForEachPreparedNeighborParticle(particle.Position, h, [&](uint32_t j)
+                        {
+                            ++counts.m_Candidates;
+                            if (j < particles.size() && j != i)
+                            {
+                                applyScalar(j);
+                            }
+                        });
+                    }
+                }
             }
             // 近傍の加算順は維持し、担当粒子のForceへの書き込みを1回にします。
             particle.Force = force;
         }
     };
+    const auto computeLayout = [&]<bool HasViscosity>()
+    {
+        if (usesSoA == true)
+        {
+            computeRange.template operator()<HasViscosity, true>();
+        }
+        else
+        {
+            computeRange.template operator()<HasViscosity, false>();
+        }
+    };
     if (m_Settings.Viscosity > 0.0f)
     {
-        computeRange.template operator()<true>();
+        computeLayout.template operator()<true>();
     }
     else
     {
-        computeRange.template operator()<false>();
+        computeLayout.template operator()<false>();
     }
 
     return counts;
@@ -1112,9 +1433,16 @@ SPHSolver::ParticleStatistics SPHSolver::AdvanceSubstep(
 {
     Diagnostics::ProfiledTraceScope trace("Physics.Fluid.SPH.Substep",
         Diagnostics::DiagnosticCategory::Physics);
+    const bool usesSoA = m_ParticleLayout != ParticleLayout::AoS;
+    if (usesSoA == true)
+    {
+        m_ParticleSoA.Build(particles, m_SpatialHash.GetCellSize(), m_ParticleLayout);
+        RecordSPHCounter("Physics.Fluid.SPH.SoACapacityBytes", static_cast<double>(m_ParticleSoA.GetCapacityBytes()));
+        RecordSPHCounter("Physics.Fluid.SPH.SoAAVX2Used", m_ParticleSoA.m_UsesAVX2 ? 1.0 : 0.0);
+    }
     // Neighbor関係と圧力は位置に依存するため、各Substepで再計算します。
     const auto cachedRanges = ComputeDensity(particles, true, pJobSystem, pVerlet);
-    ComputeForcesUsingCurrentGrid(particles, cachedRanges, pJobSystem);
+    ComputeForcesUsingCurrentGrid(particles, cachedRanges, pJobSystem, usesSoA);
     RecordSPHCounter("Physics.Fluid.SPH.ForceNeighborCacheUsed",
         cachedRanges.empty() ? 0.0 : 1.0);
     Diagnostics::ProfiledTraceScope passTrace("Physics.Fluid.SPH.IntegrateBoundaryStatistics",
