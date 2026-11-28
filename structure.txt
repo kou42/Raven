@@ -175,6 +175,7 @@ D:.
     |   |   |   |   |   DenseSDF.hlsl
     |   |   |   |   |   DenseSDF.inc
     |   |   |   |   |   GPUGridFluid.comp
+    |   |   |   |   |   GPUSPH.comp
     |   |   |   |   |   SparseSDF.comp
     |   |   |   |   |   SparseSDF.hlsl
     |   |   |   |   |   SparseSDF.inc
@@ -815,6 +816,8 @@ D:.
     |   |   |   |   |   FluidSpatialHashGrid.h
     |   |   |   |   |   GPUGridFluid.cpp
     |   |   |   |   |   GPUGridFluid.h
+    |   |   |   |   |   GPUSPH.cpp
+    |   |   |   |   |   GPUSPH.h
     |   |   |   |   |   SPHKernel.cpp
     |   |   |   |   |   SPHKernel.h
     |   |   |   |   |   SPHSettings.h

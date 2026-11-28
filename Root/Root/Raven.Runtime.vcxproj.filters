@@ -282,7 +282,9 @@
     <ClCompile Include="Raven\Physics\Fluid\FluidSpatialHashGrid.cpp"><Filter>Raven\Physics\Fluid</Filter></ClCompile>
     <ClInclude Include="Raven\Physics\Fluid\FluidSpatialHashGrid.h"><Filter>Raven\Physics\Fluid</Filter></ClInclude>
     <ClCompile Include="Raven\Physics\Fluid\GPUGridFluid.cpp"><Filter>Raven\Physics\Fluid</Filter></ClCompile>
+    <ClCompile Include="Raven\Physics\Fluid\GPUSPH.cpp"><Filter>Raven\Physics\Fluid</Filter></ClCompile>
     <ClInclude Include="Raven\Physics\Fluid\GPUGridFluid.h"><Filter>Raven\Physics\Fluid</Filter></ClInclude>
+    <ClInclude Include="Raven\Physics\Fluid\GPUSPH.h"><Filter>Raven\Physics\Fluid</Filter></ClInclude>
     <ClCompile Include="Raven\Physics\Fluid\SPHKernel.cpp"><Filter>Raven\Physics\Fluid</Filter></ClCompile>
     <ClInclude Include="Raven\Physics\Fluid\SPHKernel.h"><Filter>Raven\Physics\Fluid</Filter></ClInclude>
     <ClInclude Include="Raven\Physics\Fluid\SPHSettings.h"><Filter>Raven\Physics\Fluid</Filter></ClInclude>

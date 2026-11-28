@@ -331,6 +331,7 @@
     <Filter Include="Raven\Physics\Fluid" />
     <Filter Include="Raven\Physics\Fluid\Debug" />
     <None Include="Raven\Assets\Shaders\GPUGridFluid.comp"><Filter>Raven\Assets\Shaders</Filter></None>
+    <None Include="Raven\Assets\Shaders\GPUSPH.comp"><Filter>Raven\Assets\Shaders</Filter></None>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Raven\Physics\Electromagnetism" />

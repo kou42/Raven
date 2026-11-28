@@ -118,6 +118,10 @@ int main(int argc, char* argv[])
     for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex)
     {
         const std::string backendArgument = argv[argumentIndex];
+        if (backendArgument == "--test-gpu-sph")
+        {
+            return Raven::ph::RunGPUSPHVerification();
+        }
         if (backendArgument == "--gpu-sdf-fluid-demo" || backendArgument == "--test-gpu-sdf-fluid")
         {
             return Raven::ph::RunGPUGridFluidDemo(backendArgument == "--test-gpu-sdf-fluid");

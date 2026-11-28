@@ -384,10 +384,41 @@ Debug／Releaseビルド、Debugの `--test-fluid-sph` と `--test-physics-colli
 
 ## Phase 9 — GPU SPH（将来）
 
-- [ ] Raven RHI の Compute / Storage Buffer / Barrier 対応状況を調査する。
+- [x] Raven RHI の Compute / Storage Buffer / Barrier 対応状況を調査する。
 - [ ] GPU Grid Build → Density → Force → Integration を段階的に実装する。
 - [ ] GPU 上に粒子を常駐させ、CPU readback を最小化する。
 - [ ] CPU 版を参照実装・フォールバックとして維持する。
+
+
+### 最初のマイルストーン — OpenGLのGPU Grid BuildとDensity
+
+既存のGPU Grid Fluidは格子速度場を解くデモです。GPU SPHは粒子の密度を求める別のCompute経路として、RHIのStorage Buffer、Storage Barrier、非同期Readbackを使用します。最初の実装はOpenGL GLSLで、DirectX 12とVulkanのシェーダー実装は後続です。
+
+CPUは粒子の位置・質量とグリッドの境界をアップロードします。GPUはセルの先頭を初期化し、粒子ごとのリンクを原子的に挿入してから、各粒子のDensityを計算します。セル幅は2hで、隣接27セルの候補を距離二乗のh判定で絞ります。粒子ごとにリンク領域があり、固定件数のセル配列を使わないため、同じセルへの密集で近傍が欠けることはありません。グリッド全体は最大1,048,576セルで、RHIのバッファ・ディスパッチ上限も確認します。
+
+粒子と中間データは再ディスパッチ間でGPUに保持します。準備時の容量超過はCPUで明示的に返し、GPU側の範囲外や非有限Densityは状態ワードで検出して結果を拒否します。容量超過ケースの検証では、呼び出し側がCPUの既存Solverを選択します。
+
+リポジトリルートからの実機での再現手順を示します。
+
+```powershell
+Push-Location Root/Root
+try {
+    & ..\x64\Release\Root.exe --test-gpu-sph
+} finally {
+    Pop-Location
+}
+```
+
+Windows x64 Release、NVIDIA GeForce RTX 3080のOpenGLで照合しました。1回ウォームアップし、5回の平均を比較しました。GPU時間はセル初期化、リンク構築、Density、パス間BarrierのGPUタイムスタンプです。CPU側は直列の公開 `ComputeDensity` を計測しました。GPUバッファ準備、アップロード、ReadbackはGPU時間に含めていません。タイムスタンプを取得できない環境では、同期した経過時間を代わりに表示します。
+
+| ケース | 粒子数 | CPU ms | GPU ms | 最大絶対誤差 | 最大正規化誤差 |
+|---|---:|---:|---:|---:|---:|
+| 単一 | 1 | 0.00074 | 0.01577 | 0 | 0 |
+| セル境界・負座標・負Mass | 5 | 0.00110 | 0.01679 | 0 | 0 |
+| 密集・異なるMass | 513 | 1.47854 | 0.14234 | 0.00293 | 1.33e-6 |
+| 均一 | 5,120 | 3.35398 | 0.23634 | 0.000244 | 2.83e-7 |
+
+正規化誤差は `abs(GPU - CPU) / max(1, abs(CPU))` で、許容値は2e-4です。空入力はディスパッチと読み戻しが0回でした。非空の各条件は測定後に1回だけ読み戻し、予算超過ではGPUの結果を要求せず、CPU参照経路で計算できることを確認しました。Debug／Releaseビルド、CPUの `--test-fluid-sph`、OpenGLの `--test-gpu-sph` と既存の `--test-gpu-sdf-fluid` が成功しました。GPU Force・積分と描画まで含めた時間は今後の検証です。
 
 ## 3. ベンチマーク計画
 
