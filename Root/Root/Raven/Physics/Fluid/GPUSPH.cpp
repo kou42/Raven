@@ -261,17 +261,25 @@ GPUSPH::PrepareResult GPUSPH::PrepareInternal(const Ref<RHIComputeCommandEncoder
 
 bool GPUSPH::DispatchDensity(Ref<RHIComputeTimestamp>& timestamp)
 {
-    return Dispatch(false, timestamp);
+    return Dispatch(false, &timestamp);
+}
+
+bool GPUSPH::DispatchFixedStep()
+{
+    return Dispatch(true, nullptr);
 }
 
 bool GPUSPH::DispatchFixedStep(Ref<RHIComputeTimestamp>& timestamp)
 {
-    return Dispatch(true, timestamp);
+    return Dispatch(true, &timestamp);
 }
 
-bool GPUSPH::Dispatch(bool advancesParticles, Ref<RHIComputeTimestamp>& timestamp)
+bool GPUSPH::Dispatch(bool advancesParticles, Ref<RHIComputeTimestamp>* pTimestamp)
 {
-    timestamp.reset();
+    if (pTimestamp != nullptr)
+    {
+        pTimestamp->reset();
+    }
     m_HasStep = false;
     m_HasDensity = false;
     if (m_IsReady == false || (advancesParticles && m_CanAdvance == false))
@@ -282,7 +290,7 @@ bool GPUSPH::Dispatch(bool advancesParticles, Ref<RHIComputeTimestamp>& timestam
     {
         return true;
     }
-    m_HasDensity = m_Encoder->MeasureGpuWork([this, advancesParticles](RHIComputeCommandEncoder& encoder)
+    const auto record = [this, advancesParticles](RHIComputeCommandEncoder& encoder)
     {
         const std::array<RHIComputeBinding, 2> clear{{{0u, m_Resources[0]}, {2u, m_Resources[2]}}};
         const std::array<RHIComputeBinding, 4> particle{{{0u, m_Resources[0]}, {1u, m_Resources[1]},
@@ -305,9 +313,20 @@ bool GPUSPH::Dispatch(bool advancesParticles, Ref<RHIComputeTimestamp>& timestam
             && encoder.Barrier(RHIComputeConsumer::Storage)
             && encoder.Dispatch(m_Pipelines[4], integrate, particleGroups)
             && encoder.Barrier(RHIComputeConsumer::Storage);
-    }, timestamp);
+    };
+    m_HasDensity = pTimestamp != nullptr ? m_Encoder->MeasureGpuWork(record, *pTimestamp) : record(*m_Encoder);
     m_HasStep = m_HasDensity && advancesParticles;
     return m_HasDensity;
+}
+
+Ref<RHIComputeResource> GPUSPH::GetParticleBuffer() const
+{
+    return m_IsReady ? m_Resources[1] : nullptr;
+}
+
+uint32_t GPUSPH::GetParticleCount() const
+{
+    return m_IsReady ? m_ParticleCount : 0u;
 }
 
 Ref<RHIComputeReadback> GPUSPH::RequestDensityReadback()

@@ -211,6 +211,233 @@ private:
     GLuint m_VAO = 0;
 };
 
+class SPHPointRenderer
+{
+public:
+    ~SPHPointRenderer()
+    {
+        glDeleteProgram(m_Program);
+        glDeleteVertexArrays(1, &m_VertexArray);
+    }
+
+    bool Init()
+    {
+        m_Program = MakeProgram(R"(#version 430 core
+layout(std430, binding=0) readonly buffer Particles { vec4 values[]; };
+uniform vec2 projection;
+out float speed;
+void main()
+{
+    uint index = uint(gl_VertexID) * 2u;
+    vec3 position = values[index].xyz;
+    speed = length(values[index + 1u].xyz);
+    gl_Position = vec4(position.xy * projection, position.z * 0.4, 1);
+    gl_PointSize = 8.0;
+}
+)", R"(#version 430 core
+in float speed;
+out vec4 color;
+void main()
+{
+    float radial = length(gl_PointCoord - vec2(0.5)) * 2.0;
+    if (radial > 1.0) discard;
+    vec3 water = mix(vec3(0.13, 0.54, 0.85), vec3(0.42, 0.93, 1.0), min(speed * 0.2, 1.0));
+    color = vec4(water * (1.0 - 0.38 * radial), 1);
+}
+)");
+        if (m_Program == 0u)
+        {
+            return false;
+        }
+        m_ProjectionLocation = glGetUniformLocation(m_Program, "projection");
+        glGenVertexArrays(1, &m_VertexArray);
+        return m_VertexArray != 0u && m_ProjectionLocation >= 0;
+    }
+
+    bool Draw(const GPUSPH& solver, int width, int height) const
+    {
+        if (width <= 0 || height <= 0 || solver.GetParticleCount() == 0u)
+        {
+            return true;
+        }
+        const auto buffer = solver.GetParticleBuffer();
+        const GLuint id = GetOpenGLComputeBufferID(buffer);
+        if (id == 0u)
+        {
+            return false;
+        }
+
+        const float side = static_cast<float>(std::min(width, height)) * 0.9f;
+        glViewport(0, 0, width, height);
+        glClearColor(0.025f, 0.038f, 0.065f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_DEPTH_TEST);
+        glBindVertexArray(m_VertexArray);
+        glUseProgram(m_Program);
+        glUniform2f(m_ProjectionLocation, side / width, side / height);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, id);
+        glEnable(GL_PROGRAM_POINT_SIZE);
+        glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(solver.GetParticleCount()));
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, 0);
+        glUseProgram(0);
+        glBindVertexArray(0);
+        glDisable(GL_PROGRAM_POINT_SIZE);
+        glDisable(GL_DEPTH_TEST);
+        return glGetError() == GL_NO_ERROR;
+    }
+
+private:
+    GLuint m_Program = 0u;
+    GLuint m_VertexArray = 0u;
+    GLint m_ProjectionLocation = -1;
+};
+
+bool VerifySPHResidentRender(GLFWwindow& window, RHIComputeCommandEncoder& encoder,
+    GPUSPH& solver, const SPHPointRenderer& renderer)
+{
+    int width = 0;
+    int height = 0;
+    glfwGetFramebufferSize(&window, &width, &height);
+    if (width < 64 || height < 64)
+    {
+        return false;
+    }
+    const auto before = encoder.GetStatistics();
+    const auto particleBuffer = solver.GetParticleBuffer();
+    GLuint query = 0u;
+    glGenQueries(1, &query);
+    if (query == 0u)
+    {
+        return false;
+    }
+
+    const auto verifyRegion = [&](int x, int regionWidth, bool expectsSamples)
+    {
+        glEnable(GL_SCISSOR_TEST);
+        glScissor(x, 0, regionWidth, height);
+        glBeginQuery(GL_ANY_SAMPLES_PASSED, query);
+        const bool drawn = renderer.Draw(solver, width, height);
+        glEndQuery(GL_ANY_SAMPLES_PASSED);
+        glDisable(GL_SCISSOR_TEST);
+        GLuint samples = 0u;
+        // 検証では描画クエリの真偽だけを取得し、画像・粒子バッファをCPUへコピーしません。
+        glGetQueryObjectuiv(query, GL_QUERY_RESULT, &samples);
+        return drawn && glGetError() == GL_NO_ERROR && (samples != 0u) == expectsSamples;
+    };
+
+    const int regionWidth = width / 3;
+    const int right = width - regionWidth;
+    // 中央の静止粒子で、別インデックスでもSSBOのストライドが正しいことを確認します。
+    bool valid = verifyRegion(0, regionWidth, true) && verifyRegion(regionWidth, regionWidth, true)
+        && verifyRegion(right, regionWidth, false);
+    constexpr uint32_t frameCount = 12u;
+    for (uint32_t frame = 0u; valid && frame < frameCount; ++frame)
+    {
+        // 前回の頂点シェーダーによるSSBO参照と、今回のCompute書き込みも同じContextで順序付けます。
+        valid = encoder.Barrier(RHIComputeConsumer::Storage) && solver.DispatchFixedStep()
+            && renderer.Draw(solver, width, height);
+    }
+    valid = valid && verifyRegion(0, regionWidth, false) && verifyRegion(regionWidth, regionWidth, true)
+        && verifyRegion(right, regionWidth, true);
+    glDeleteQueries(1, &query);
+    const auto after = encoder.GetStatistics();
+    valid = valid && solver.GetParticleBuffer() == particleBuffer
+        && after.Dispatches == before.Dispatches + 5u * frameCount
+        && after.Buffers == before.Buffers && after.Readbacks == before.Readbacks
+        && after.ReadbackBytes == before.ReadbackBytes;
+    if (valid == true)
+    {
+        std::cout << "OpenGL: " << glGetString(GL_RENDERER) << '\n'
+            << "SPH render frames=" << frameCount << ", particles=" << solver.GetParticleCount() << ", dispatches=" << after.Dispatches - before.Dispatches
+            << ", particle_readbacks=0, reallocations=0, region_transition=left_to_right\n";
+    }
+    return valid;
+}
+
+bool RunSPHResidentRender(GLFWwindow& window, bool verify)
+{
+    OpenGLRHIDevice device;
+    const auto encoder = device.CreateComputeCommandEncoder();
+    const auto capabilities = device.QueryComputeCapabilities();
+    GPUSPH solver;
+    SPHPointRenderer renderer;
+    SPHSettings settings;
+    settings.StableTimeStepEnabled = false;
+    settings.BoundaryEnabled = true;
+    settings.BoundaryRestitution = 0.4f;
+
+    const float dt = verify ? 0.025f : 1.0f / 240.0f;
+    std::vector<FluidParticle> particles;
+    if (verify == true)
+    {
+        settings.Gravity = {};
+        particles.resize(2u);
+        particles[0].Position.x = -0.65f;
+        particles[0].Velocity.x = 4.5f;
+        particles[1].Position.y = 0.6f;
+    }
+    else
+    {
+        constexpr float spacing = 0.055f;
+        for (int z = 0; z < 4; ++z)
+        for (int y = 0; y < 15; ++y)
+        for (int x = 0; x < 15; ++x)
+        {
+            FluidParticle particle;
+            particle.Position = {-0.55f + x * spacing, -0.10f + y * spacing, -0.09f + z * spacing};
+            particle.Mass = settings.RestDensity * spacing * spacing * spacing;
+            particles.push_back(particle);
+        }
+    }
+    if (Check(solver.PrepareFixedStep(encoder, capabilities, particles, settings, dt, ReadShader("GPUSPH.comp"))
+        == GPUSPH::PrepareResult::Ready && renderer.Init(), "SPH resident render setup") == false)
+    {
+        return false;
+    }
+
+    if (verify == true)
+    {
+        return Check(VerifySPHResidentRender(window, *encoder, solver, renderer), "SPH resident render verification");
+    }
+
+    glfwSwapInterval(1);
+    double previous = glfwGetTime();
+    double accumulator = 0.0;
+    while (glfwWindowShouldClose(&window) == GLFW_FALSE)
+    {
+        glfwPollEvents();
+        if (glfwGetKey(&window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        {
+            break;
+        }
+        const double now = glfwGetTime();
+        accumulator += std::min(now - previous, 1.0 / 30.0);
+        previous = now;
+        if (accumulator >= dt && encoder->Barrier(RHIComputeConsumer::Storage) == false)
+        {
+            return false;
+        }
+        while (accumulator >= dt)
+        {
+            if (solver.DispatchFixedStep() == false)
+            {
+                return false;
+            }
+            accumulator -= dt;
+        }
+
+        int width = 0;
+        int height = 0;
+        glfwGetFramebufferSize(&window, &width, &height);
+        if (renderer.Draw(solver, width, height) == false)
+        {
+            return false;
+        }
+        glfwSwapBuffers(&window);
+    }
+    return true;
+}
+
 bool ReadParticles(Simulation& simulation, std::vector<GPUGridFluidParticle>& result)
 {
     if (simulation.Solver.GetReadbackCount() != 0)
@@ -822,6 +1049,34 @@ bool Run(GLFWwindow& window, bool verify)
     return true;
 }
 } // namespace
+
+int RunGPUSPHRenderDemo(bool verify)
+{
+    if (Check(glfwInit() == GLFW_TRUE, "GLFW initialization") == false)
+    {
+        return 1;
+    }
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_VISIBLE, verify ? GLFW_FALSE : GLFW_TRUE);
+    GLFWwindow* pWindow = glfwCreateWindow(640, 640, "Raven GPU SPH", nullptr, nullptr);
+    bool successful = false;
+    if (Check(pWindow != nullptr, "OpenGL 4.3 context"))
+    {
+        glfwMakeContextCurrent(pWindow);
+        successful = Check(gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress)) != 0,
+            "OpenGL loader") && RunSPHResidentRender(*pWindow, verify);
+        // 描画・Computeリソースは同じContextがcurrentのまま破棄されています。
+        glfwDestroyWindow(pWindow);
+    }
+    glfwTerminate();
+    if (verify && successful)
+    {
+        std::cout << "[PASS] GPU SPH resident render\n";
+    }
+    return successful ? 0 : 1;
+}
 
 int RunGPUSPHVerification()
 {
