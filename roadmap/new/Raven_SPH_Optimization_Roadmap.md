@@ -386,7 +386,7 @@ Debug／Releaseビルド、Debugの `--test-fluid-sph` と `--test-physics-colli
 
 - [x] Raven RHI の Compute / Storage Buffer / Barrier 対応状況を調査する。
 - [x] OpenGLでGPU Grid Build → Density → Force → Integrationの固定刻み経路を実装する。
-- [ ] GPU 上に粒子を常駐させ、CPU readback を最小化する。
+- [x] OpenGLの固定刻み更新と描画で粒子をGPUに常駐させる。
 - [ ] CPU 版を参照実装・フォールバックとして維持する。
 
 
@@ -434,6 +434,28 @@ Windows x64 Release、RTX 3080のOpenGLで `--test-gpu-sph` を実行しまし�
 | 12 | 0.76562 | 0.41941 | 4.91e-7 | 4.88e-7 | 2.21e-4 | 5.96e-8 | 5.78e-6 |
 
 誤差は成分ごとの `abs(GPU - CPU) / max(scale, abs(CPU))` の最大値です。PressureはEOSに合わせて `scale = RestDensity * PressureStiffness`、他は1としました。許容値はDensity 2e-4、Pressure 2e-6、Force 2e-3、位置と速度は5e-4です。同じテストで境界反射、負Mass、グリッド外移動時の結果拒否も確認しました。Debug／Releaseビルド、CPU SPH、GPU SPH、既存GPU Grid Fluid / SDFのテストが通りました。可変CFL、描画連携、DirectX 12／Vulkan、GPU失敗時の自動復旧は後続の範囲です。
+
+### GPU常駐粒子のOpenGL描画
+
+`--gpu-sph-demo` は固定刻みSPHで更新した粒子をポイントとして表示します。頂点シェーダーは積分が出力した同じStorage Bufferから位置・速度を読みます。CPU側は固定刻みのディスパッチと描画のみを指示します。通常の描画ループにタイムスタンプ、粒子の読み戻し、状態判定用の同期クエリはありません。
+
+積分直後のStorage Barrierで描画から位置・速度を参照可能にし、次のCompute書き込み前にも同じContext上でStorage Barrierを発行します。バッファはSolverが保持し、描画・ComputeのリソースはContextがcurrentの間に破棄します。
+
+リポジトリルートからの実行例です。
+
+```powershell
+Push-Location Root/Root
+try {
+    & ..\x64\Release\Root.exe --gpu-sph-demo
+    & ..\x64\Release\Root.exe --test-gpu-sph-render
+} finally {
+    Pop-Location
+}
+```
+
+RTX 3080のOpenGL検証では、移動粒子が左領域から右領域へ移り、別インデックスの静止粒子が中央に残ることを描画クエリで確認しました。12フレームで60回のComputeディスパッチを行い、粒子バッファの再確保・CPU読み戻しはともに0回でした。描画クエリの結果は真偽値のみで、画像と粒子データは転送しません。Debug／Releaseビルド、CPU SPH、GPU SPH、既存GPU Grid Fluid / SDFのテストが通りました。
+
+表示デモはEscapeで終了します。GPUエラー状態の取得・CPU Solverへの自動切り替え、可変CFL、他のRHIバックエンドは後続の範囲です。
 
 ## 3. ベンチマーク計画
 
