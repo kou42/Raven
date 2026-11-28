@@ -824,6 +824,194 @@ bool VerifySPHFixedSteps(const Ref<RHIComputeCommandEncoder>& encoder, const RHI
         && GPUSPH::DecodeStep(state, dynamics, escaping) == false, "SPH grid escape rejected");
 }
 
+bool VerifySPHAdaptiveFrame(const Ref<RHIComputeCommandEncoder>& encoder,
+    const RHIComputeCapabilities& capabilities, const std::string& source)
+{
+    using Result = GPUSPH::PrepareResult;
+    const auto verify = [&](const char* name, const SPHSettings& settings,
+        const std::vector<FluidParticle>& initial, float frameDt, uint32_t expectedSteps, bool expectsLimit,
+        bool compareFixedCost = false)
+    {
+        SPHSolver cpu(settings);
+        auto expected = initial;
+        cpu.Step(expected, frameDt);
+        if (Check(cpu.GetLastSubstepCount() == expectedSteps && cpu.WasLastSubstepLimitReached() == expectsLimit,
+            "SPH adaptive CPU fixture") == false)
+        {
+            std::cerr << name << " cpu substeps=" << cpu.GetLastSubstepCount() << '\n';
+            return false;
+        }
+        GPUSPH gpu;
+        if (Check(gpu.PrepareAdaptiveFrame(encoder, capabilities, initial, settings, frameDt, source) == Result::Ready,
+            "SPH adaptive prepare") == false)
+        {
+            return false;
+        }
+        const auto before = encoder->GetStatistics();
+        Ref<RHIComputeTimestamp> timestamp;
+        if (Check(gpu.DispatchAdaptiveFrame(timestamp), "SPH adaptive dispatch") == false)
+        {
+            return false;
+        }
+        const auto after = encoder->GetStatistics();
+        if (Check(after.Readbacks == before.Readbacks && after.Buffers == before.Buffers
+            && after.Dispatches == before.Dispatches + 1u + 7u * settings.MaximumSubsteps,
+            "SPH adaptive GPU residence") == false)
+        {
+            return false;
+        }
+
+        const auto tickets = gpu.RequestStepReadback();
+        const auto statisticsTicket = gpu.RequestAdaptiveStatistics();
+        std::vector<std::byte> stateBytes;
+        std::vector<std::byte> dynamicsBytes;
+        std::vector<std::byte> statisticsBytes;
+        std::vector<FluidParticle> actual(initial.size());
+        GPUSPH::AdaptiveStatistics statistics;
+        if (Check(ReadSPHBuffer(tickets.m_Particles, stateBytes) && ReadSPHBuffer(tickets.m_Dynamics, dynamicsBytes)
+            && ReadSPHBuffer(statisticsTicket, statisticsBytes)
+            && GPUSPH::DecodeStep(stateBytes, dynamicsBytes, actual)
+            && GPUSPH::DecodeAdaptiveStatistics(statisticsBytes, statistics)
+            && encoder->GetStatistics().Readbacks == before.Readbacks + 3u,
+            "SPH adaptive final snapshots") == false)
+        {
+            return false;
+        }
+        if (Check(statistics.m_Substeps == expectedSteps && statistics.m_HasReachedLimit == expectsLimit
+            && std::abs(statistics.m_MinimumDt - cpu.GetLastMinimumSubstepDeltaTime()) <= 1.0e-6f,
+            "SPH adaptive substep statistics") == false)
+        {
+            std::cerr << name << " gpu substeps=" << statistics.m_Substeps
+                << " gpu_min_dt=" << statistics.m_MinimumDt << " cpu_min_dt="
+                << cpu.GetLastMinimumSubstepDeltaTime() << '\n';
+            return false;
+        }
+        const auto close = [](float value, float reference, float scale, float tolerance)
+        {
+            return std::isfinite(value) && std::isfinite(reference)
+                && std::abs(value - reference) <= tolerance * std::max(scale, std::abs(reference));
+        };
+        const auto vectorClose = [&](const Vec3& value, const Vec3& reference, float tolerance)
+        {
+            return close(value.x, reference.x, 1.0f, tolerance) && close(value.y, reference.y, 1.0f, tolerance)
+                && close(value.z, reference.z, 1.0f, tolerance);
+        };
+        for (std::size_t index = 0u; index < actual.size(); ++index)
+        {
+            const auto& value = actual[index];
+            const auto& reference = expected[index];
+            if (Check(value.Mass == reference.Mass
+                && close(value.Density, reference.Density, 1.0f, 2.0e-4f)
+                && close(value.Pressure, reference.Pressure, std::max(1.0f, settings.RestDensity * settings.PressureStiffness), 2.0e-6f)
+                && vectorClose(value.Force, reference.Force, 2.0e-3f)
+                && vectorClose(value.Position, reference.Position, 5.0e-4f)
+                && vectorClose(value.Velocity, reference.Velocity, 5.0e-4f), name) == false)
+            {
+                std::cerr << "particle=" << index << '\n';
+                return false;
+            }
+        }
+
+        std::cout << "adaptive=" << name << ", particles=" << initial.size() << ", substeps=" << statistics.m_Substeps
+            << ", min_dt=" << statistics.m_MinimumDt << ", limit=" << statistics.m_HasReachedLimit
+            << ", intermediate_readbacks=0";
+        if (compareFixedCost == true)
+        {
+            GPUSPH fixed;
+            if (Check(fixed.PrepareFixedStep(encoder, capabilities, initial, settings,
+                frameDt / expectedSteps, source) == Result::Ready, "SPH fixed cost prepare") == false)
+            {
+                return false;
+            }
+            std::vector<Ref<RHIComputeTimestamp>> fixedTimestamps(expectedSteps);
+            for (auto& fixedTimestamp : fixedTimestamps)
+            {
+                if (fixed.DispatchFixedStep(fixedTimestamp) == false)
+                {
+                    return false;
+                }
+            }
+            glFinish();
+            double adaptiveNs = 0.0;
+            double fixedNs = 0.0;
+            bool hasTiming = timestamp != nullptr && timestamp->Poll(adaptiveNs) == RHIComputeReadbackStatus::Ready;
+            for (const auto& fixedTimestamp : fixedTimestamps)
+            {
+                double value = 0.0;
+                hasTiming = hasTiming && fixedTimestamp != nullptr
+                    && fixedTimestamp->Poll(value) == RHIComputeReadbackStatus::Ready;
+                fixedNs += value;
+            }
+            if (hasTiming == true)
+            {
+                std::cout << ", adaptive_gpu_ms=" << adaptiveNs / 1.0e6 << ", fixed_gpu_ms=" << fixedNs / 1.0e6;
+            }
+            else
+            {
+                std::cout << ", gpu_timing=unavailable";
+            }
+        }
+        std::cout << '\n';
+        return true;
+    };
+
+    SPHSettings settings;
+    settings.PressureStiffness = 0.0f;
+    settings.Gravity = {};
+    settings.MinimumTimeStep = 0.0f;
+    settings.AccelerationTimeStepFactor = 0.0f;
+    settings.BoundaryEnabled = true;
+    settings.BoundaryRestitution = 0.5f;
+    std::vector<FluidParticle> single(1u);
+    single[0].Velocity.x = 4.0f;
+    if (verify("velocity", settings, single, 0.025f, 3u, false) == false)
+    {
+        return false;
+    }
+    single[0].Position.x = 0.97f;
+    if (verify("reflection", settings, single, 0.025f, 2u, false) == false)
+    {
+        return false;
+    }
+    single[0] = {};
+    single[0].Force.x = 16.0f;
+    settings.CFLFactor = 0.0f;
+    settings.AccelerationTimeStepFactor = 0.25f;
+    if (verify("acceleration", settings, single, 0.04f, 2u, false) == false)
+    {
+        return false;
+    }
+    settings.MinimumTimeStep = 0.03f;
+    if (verify("minimum_dt", settings, single, 0.04f, 2u, false) == false)
+    {
+        return false;
+    }
+    settings.MinimumTimeStep = 0.0f;
+    settings.MaximumSubsteps = 1u;
+    if (verify("substep_limit", settings, single, 0.04f, 1u, true) == false)
+    {
+        return false;
+    }
+    single[0].Density = 3.0f;
+    single[0].Pressure = 4.0f;
+    if (verify("below_epsilon", settings, single, 0.5e-6f, 0u, false) == false)
+    {
+        return false;
+    }
+
+    settings = {};
+    settings.BoundaryEnabled = true;
+    settings.PressureStiffness = 100.0f;
+    std::vector<FluidParticle> uniform(512u);
+    for (std::size_t index = 0u; index < uniform.size(); ++index)
+    {
+        uniform[index].Position = {static_cast<float>(index % 8u) * 0.065f,
+            static_cast<float>((index / 8u) % 8u) * 0.065f, static_cast<float>(index / 64u) * 0.065f};
+        uniform[index].Mass = 0.25f;
+    }
+    return verify("uniform", settings, uniform, 0.01f, 3u, false, true);
+}
+
 bool VerifySPHDensity()
 {
     OpenGLRHIDevice device;
@@ -986,7 +1174,8 @@ bool VerifySPHDensity()
     cpu.ComputeDensity(overCapacity);
     return Check(std::isfinite(overCapacity[0].Density) && overCapacity[0].Density > 0.0f
         && overCapacity[0].Density == overCapacity[1].Density, "SPH CPU fallback")
-        && VerifySPHFixedSteps(encoder, capabilities, source);
+        && VerifySPHFixedSteps(encoder, capabilities, source)
+        && VerifySPHAdaptiveFrame(encoder, capabilities, source);
 }
 
 bool Run(GLFWwindow& window, bool verify)
@@ -1100,7 +1289,7 @@ int RunGPUSPHVerification()
     glfwTerminate();
     if (successful == true)
     {
-        std::cout << "[PASS] GPU SPH Density / fixed step verification\n";
+        std::cout << "[PASS] GPU SPH Density / fixed step / adaptive CFL verification\n";
     }
     return successful ? 0 : 1;
 }

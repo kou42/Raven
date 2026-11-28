@@ -17,6 +17,19 @@ public:
     PrepareResult PrepareFixedStep(const Ref<RHIComputeCommandEncoder>& encoder,
         const RHIComputeCapabilities& capabilities, std::span<const FluidParticle> particles,
         const SPHSettings& settings, float deltaTime, const std::string& shaderSource);
+    PrepareResult PrepareAdaptiveFrame(const Ref<RHIComputeCommandEncoder>& encoder,
+        const RHIComputeCapabilities& capabilities, std::span<const FluidParticle> particles,
+        const SPHSettings& settings, float frameDeltaTime, const std::string& shaderSource);
+    bool DispatchAdaptiveFrame(Ref<RHIComputeTimestamp>& timestamp);
+    struct AdaptiveStatistics
+    {
+        uint32_t m_Substeps = 0u;
+        float m_MinimumDt = 0.0f;
+        bool m_HasReachedLimit = false;
+    };
+    Ref<RHIComputeReadback> RequestAdaptiveStatistics();
+    static bool DecodeAdaptiveStatistics(std::span<const std::byte> bytes, AdaptiveStatistics& statistics);
+
     bool DispatchFixedStep();
     bool DispatchFixedStep(Ref<RHIComputeTimestamp>& timestamp);
     // 描画用SSBOは粒子ごとにvec4(位置・Mass)とvec4(速度)の順で並びます。
@@ -39,14 +52,17 @@ public:
 private:
     PrepareResult PrepareInternal(const Ref<RHIComputeCommandEncoder>& encoder,
         const RHIComputeCapabilities& capabilities, std::span<const FluidParticle> particles,
-        const SPHSettings& settings, float deltaTime, const std::string& shaderSource);
+        const SPHSettings& settings, float deltaTime, const std::string& shaderSource,
+        uint32_t adaptiveSubsteps = 0u);
+    bool RecordParticlePasses(RHIComputeCommandEncoder& encoder, bool advancesParticles) const;
     bool Dispatch(bool advancesParticles, Ref<RHIComputeTimestamp>* pTimestamp);
 
     Ref<RHIComputeCommandEncoder> m_Encoder;
-    std::array<Ref<RHIComputePipeline>, 5> m_Pipelines;
-    std::array<Ref<RHIComputeResource>, 4> m_Resources;
+    std::array<Ref<RHIComputePipeline>, 8> m_Pipelines;
+    std::array<Ref<RHIComputeResource>, 5> m_Resources;
     uint32_t m_ParticleCount = 0u;
     uint32_t m_CellCount = 0u;
+    uint32_t m_AdaptiveSubsteps = 0u;
     bool m_IsReady = false;
     bool m_HasDensity = false;
     bool m_HasStep = false;
